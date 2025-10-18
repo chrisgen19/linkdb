@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker exec postgres_db psql -U myuser -d mydatabase -c \"SELECT current_user;\")",
+      "Bash(lsof -i :5432)",
+      "Bash(brew services list)",
+      "Bash(brew services stop postgresql@14)",
+      "Bash(docker exec postgres_db psql -U myuser -d mydatabase -c \"CREATE DATABASE IF NOT EXISTS linkdb;\")",
+      "Bash(docker exec postgres_db psql -U myuser -d mydatabase -c \"CREATE DATABASE linkdb;\")",
+      "Bash(docker exec postgres_db psql -U myuser -d linkdb -c \"\\dt\")",
+      "Bash(docker exec postgres_db psql -U myuser -d linkdb -c \"\\d \"\"Link\"\"\")",
+      "Bash(docker-compose up -d)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
