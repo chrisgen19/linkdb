@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH a link (update favorite status)
+// PATCH a link (update link details)
 export async function PATCH(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -98,7 +98,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { id, favorite } = await request.json();
+    const { id, favorite, actressId, title, image } = await request.json();
 
     if (!id) {
       return NextResponse.json({ error: 'ID is required' }, { status: 400 });
@@ -116,11 +116,16 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Link not found' }, { status: 404 });
     }
 
+    // Build update data object with only provided fields
+    const updateData: any = {};
+    if (favorite !== undefined) updateData.favorite = favorite;
+    if (actressId !== undefined) updateData.actressId = actressId;
+    if (title !== undefined) updateData.title = title;
+    if (image !== undefined) updateData.image = image;
+
     const link = await prisma.link.update({
       where: { id },
-      data: {
-        favorite,
-      },
+      data: updateData,
       include: {
         actress: true,
       },

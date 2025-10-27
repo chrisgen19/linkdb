@@ -36,6 +36,7 @@ export default function Home() {
   const [error, setError] = useState('');
   const [fetchingLinks, setFetchingLinks] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [editingLink, setEditingLink] = useState<Link | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchType, setSearchType] = useState<'links' | 'actress'>('links');
   const [showSearchActressDropdown, setShowSearchActressDropdown] = useState(false);
@@ -141,46 +142,72 @@ export default function Home() {
         }
       }
 
-      // First, fetch metadata
-      const metadataResponse = await fetch('/api/metadata', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ url }),
-      });
+      if (editingLink) {
+        // Update existing link
+        const updateResponse = await fetch('/api/links', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: editingLink.id,
+            favorite,
+            actressId,
+          }),
+        });
 
-      if (!metadataResponse.ok) {
-        const errorData = await metadataResponse.json();
-        throw new Error(errorData.error || 'Failed to fetch metadata');
+        if (!updateResponse.ok) {
+          const errorData = await updateResponse.json();
+          throw new Error(errorData.error || 'Failed to update link');
+        }
+
+        const updatedLink = await updateResponse.json();
+        setLinks(links.map((link) => (link.id === updatedLink.id ? updatedLink : link)));
+      } else {
+        // Create new link
+        // First, fetch metadata
+        const metadataResponse = await fetch('/api/metadata', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ url }),
+        });
+
+        if (!metadataResponse.ok) {
+          const errorData = await metadataResponse.json();
+          throw new Error(errorData.error || 'Failed to fetch metadata');
+        }
+
+        const metadata = await metadataResponse.json();
+
+        // Then, save to database with favorite and actress
+        const saveResponse = await fetch('/api/links', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ...metadata,
+            favorite,
+            actressId,
+          }),
+        });
+
+        if (!saveResponse.ok) {
+          const errorData = await saveResponse.json();
+          throw new Error(errorData.error || 'Failed to save link');
+        }
+
+        const newLink = await saveResponse.json();
+        setLinks([newLink, ...links]);
       }
 
-      const metadata = await metadataResponse.json();
-
-      // Then, save to database with favorite and actress
-      const saveResponse = await fetch('/api/links', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...metadata,
-          favorite,
-          actressId,
-        }),
-      });
-
-      if (!saveResponse.ok) {
-        const errorData = await saveResponse.json();
-        throw new Error(errorData.error || 'Failed to save link');
-      }
-
-      const newLink = await saveResponse.json();
-      setLinks([newLink, ...links]);
       setUrl('');
       setFavorite(false);
       setActressInput('');
       setSelectedActress(null);
+      setEditingLink(null);
       setShowModal(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -226,6 +253,20 @@ export default function Home() {
     setSelectedActress(actress);
     setActressInput(actress.name);
     setShowActressDropdown(false);
+  };
+
+  const handleEdit = (link: Link) => {
+    setEditingLink(link);
+    setUrl(link.url);
+    setFavorite(link.favorite);
+    if (link.actress) {
+      setActressInput(link.actress.name);
+      setSelectedActress(link.actress);
+    } else {
+      setActressInput('');
+      setSelectedActress(null);
+    }
+    setShowModal(true);
   };
 
   // Show loading state while checking authentication
@@ -367,7 +408,7 @@ export default function Home() {
               {/* Modal Header */}
               <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  Add New Link
+                  {editingLink ? 'Edit Link' : 'Add New Link'}
                 </h2>
                 <button
                   onClick={() => {
@@ -377,6 +418,7 @@ export default function Home() {
                     setFavorite(false);
                     setActressInput('');
                     setSelectedActress(null);
+                    setEditingLink(null);
                   }}
                   className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
                 >
@@ -399,8 +441,14 @@ export default function Home() {
                       placeholder="https://example.com"
                       className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                       required
-                      disabled={loading}
+                      disabled={loading || !!editingLink}
+                      readOnly={!!editingLink}
                     />
+                    {editingLink && (
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        URL cannot be changed when editing
+                      </p>
+                    )}
                   </div>
 
                   {/* Favorite Toggle */}
@@ -474,6 +522,7 @@ export default function Home() {
                         setFavorite(false);
                         setActressInput('');
                         setSelectedActress(null);
+                        setEditingLink(null);
                       }}
                       disabled={loading}
                       className="flex-1 px-6 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-semibold rounded-lg transition-colors"
@@ -485,7 +534,7 @@ export default function Home() {
                       disabled={loading}
                       className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-lg transition-colors"
                     >
-                      {loading ? 'Saving...' : 'Save Link'}
+                      {loading ? (editingLink ? 'Updating...' : 'Saving...') : (editingLink ? 'Update Link' : 'Save Link')}
                     </button>
                   </div>
                 </form>
@@ -567,21 +616,36 @@ export default function Home() {
                   </a>
                   {link.actress && (
                     <div className="mb-3">
-                      <span className="inline-block px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-sm rounded-full">
+                      <button
+                        onClick={() => {
+                          setSearchType('actress');
+                          setSearchQuery(link.actress!.name);
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="inline-block px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-sm rounded-full hover:bg-purple-200 dark:hover:bg-purple-800 transition-colors cursor-pointer"
+                      >
                         {link.actress.name}
-                      </span>
+                      </button>
                     </div>
                   )}
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                       {new Date(link.createdAt).toLocaleDateString()}
                     </span>
-                    <button
-                      onClick={() => handleDelete(link.id)}
-                      className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium"
-                    >
-                      Delete
-                    </button>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => handleEdit(link)}
+                        className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(link.id)}
+                        className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
