@@ -35,6 +35,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [fetchingLinks, setFetchingLinks] = useState(true);
+  const [showModal, setShowModal] = useState(false);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -155,6 +156,7 @@ export default function Home() {
       setFavorite(false);
       setActressInput('');
       setSelectedActress(null);
+      setShowModal(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -220,8 +222,19 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 py-12 px-4">
       <div className="max-w-6xl mx-auto">
-        {/* Header with user info and logout */}
+        {/* Header with add link, website name, and logout */}
         <div className="flex justify-between items-center mb-8">
+          {/* Add Link Button - Left Side */}
+          <div>
+            <button
+              onClick={() => setShowModal(true)}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors shadow-lg"
+            >
+              + Add Link
+            </button>
+          </div>
+
+          {/* Website Name - Center */}
           <div className="text-center flex-1">
             <h1 className="text-5xl font-bold text-gray-900 dark:text-white mb-4">
               LinkDB
@@ -230,6 +243,8 @@ export default function Home() {
               Save and organize your favorite links
             </p>
           </div>
+
+          {/* User Info and Logout - Right Side */}
           <div className="flex items-center gap-4">
             {session?.user?.email && (
               <span className="text-gray-600 dark:text-gray-400 text-sm">
@@ -245,80 +260,139 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Add Link Form */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-8">
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <input
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="Paste a URL here..."
-                className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                required
-                disabled={loading}
-              />
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-lg transition-colors"
-              >
-                {loading ? 'Saving...' : 'Save Link'}
-              </button>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-4">
-              {/* Favorite Toggle */}
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={favorite}
-                  onChange={(e) => setFavorite(e.target.checked)}
-                  className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                  disabled={loading}
-                />
-                <span className="text-gray-700 dark:text-gray-300 font-medium">
-                  Mark as Favorite
-                </span>
-              </label>
-
-              {/* Actress Input */}
-              <div className="flex-1 relative">
-                <input
-                  type="text"
-                  value={actressInput}
-                  onChange={(e) => {
-                    setActressInput(e.target.value);
+        {/* Add Link Modal */}
+        {showModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              {/* Modal Header */}
+              <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                  Add New Link
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowModal(false);
+                    setError('');
+                    setUrl('');
+                    setFavorite(false);
+                    setActressInput('');
                     setSelectedActress(null);
-                    setShowActressDropdown(true);
                   }}
-                  onFocus={() => setShowActressDropdown(true)}
-                  onBlur={() => setTimeout(() => setShowActressDropdown(false), 200)}
-                  placeholder="Actress name (optional)"
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                  disabled={loading}
-                />
-                {showActressDropdown && filteredActresses.length > 0 && actressInput && (
-                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {filteredActresses.map((actress) => (
-                      <button
-                        key={actress.id}
-                        type="button"
-                        onClick={() => handleActressSelect(actress)}
-                        className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-900 dark:text-white"
-                      >
-                        {actress.name}
-                      </button>
-                    ))}
+                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6">
+                <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+                  {/* URL Input */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      URL <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="url"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      placeholder="https://example.com"
+                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                      required
+                      disabled={loading}
+                    />
                   </div>
-                )}
+
+                  {/* Favorite Toggle */}
+                  <div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={favorite}
+                        onChange={(e) => setFavorite(e.target.checked)}
+                        className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                        disabled={loading}
+                      />
+                      <span className="text-gray-700 dark:text-gray-300 font-medium">
+                        Mark as Favorite
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Actress Input */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Actress (optional)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={actressInput}
+                        onChange={(e) => {
+                          setActressInput(e.target.value);
+                          setSelectedActress(null);
+                          setShowActressDropdown(true);
+                        }}
+                        onFocus={() => setShowActressDropdown(true)}
+                        onBlur={() => setTimeout(() => setShowActressDropdown(false), 200)}
+                        placeholder="Type to search or add new actress"
+                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                        disabled={loading}
+                      />
+                      {showActressDropdown && filteredActresses.length > 0 && actressInput && (
+                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          {filteredActresses.map((actress) => (
+                            <button
+                              key={actress.id}
+                              type="button"
+                              onClick={() => handleActressSelect(actress)}
+                              className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-900 dark:text-white"
+                            >
+                              {actress.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Error Message */}
+                  {error && (
+                    <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                      <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
+                    </div>
+                  )}
+
+                  {/* Modal Footer */}
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowModal(false);
+                        setError('');
+                        setUrl('');
+                        setFavorite(false);
+                        setActressInput('');
+                        setSelectedActress(null);
+                      }}
+                      disabled={loading}
+                      className="flex-1 px-6 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-semibold rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-lg transition-colors"
+                    >
+                      {loading ? 'Saving...' : 'Save Link'}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
-          </form>
-          {error && (
-            <p className="mt-4 text-red-600 dark:text-red-400">{error}</p>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Links Grid */}
         {fetchingLinks ? (
