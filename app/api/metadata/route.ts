@@ -62,30 +62,68 @@ export async function POST(request: NextRequest) {
 
     // Helper function to make URLs absolute
     const makeAbsoluteUrl = (imageUrl: string, baseUrl: string): string => {
-      if (!imageUrl || imageUrl.startsWith('http')) {
+      if (!imageUrl) {
+        console.warn(`[Metadata] makeAbsoluteUrl: Empty image URL provided`);
         return imageUrl;
       }
-      const urlObj = new URL(baseUrl);
-      if (imageUrl.startsWith('//')) {
-        return urlObj.protocol + imageUrl;
-      } else if (imageUrl.startsWith('/')) {
-        return urlObj.origin + imageUrl;
-      } else {
-        return urlObj.origin + '/' + imageUrl;
+
+      if (imageUrl.startsWith('http')) {
+        return imageUrl;
+      }
+
+      try {
+        const urlObj = new URL(baseUrl);
+        let absoluteUrl = '';
+
+        if (imageUrl.startsWith('//')) {
+          absoluteUrl = urlObj.protocol + imageUrl;
+        } else if (imageUrl.startsWith('/')) {
+          absoluteUrl = urlObj.origin + imageUrl;
+        } else {
+          absoluteUrl = urlObj.origin + '/' + imageUrl;
+        }
+
+        console.log(`[Metadata] Converted relative URL: ${imageUrl} → ${absoluteUrl}`);
+        return absoluteUrl;
+      } catch (error) {
+        console.error(`[Metadata] Error converting URL to absolute:`, {
+          imageUrl,
+          baseUrl,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        return imageUrl;
       }
     };
 
     // Helper function to check if image URL is accessible
     const isImageAccessible = async (imageUrl: string): Promise<boolean> => {
       try {
+        console.log(`[Metadata] Checking image accessibility: ${imageUrl}`);
         const imgResponse = await fetch(imageUrl, {
           method: 'HEAD',
           headers: {
             'User-Agent': 'Mozilla/5.0 (compatible; LinkDB/1.0)',
           },
         });
+
+        console.log(`[Metadata] Image check response:`, {
+          url: imageUrl,
+          status: imgResponse.status,
+          statusText: imgResponse.statusText,
+          contentType: imgResponse.headers.get('content-type'),
+          ok: imgResponse.ok,
+        });
+
+        if (!imgResponse.ok) {
+          console.warn(`[Metadata] Image not accessible - Status ${imgResponse.status}: ${imageUrl}`);
+        }
+
         return imgResponse.ok;
-      } catch {
+      } catch (error) {
+        console.error(`[Metadata] Error checking image accessibility: ${imageUrl}`, {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          type: error instanceof Error ? error.constructor.name : typeof error,
+        });
         return false;
       }
     };
@@ -129,6 +167,10 @@ export async function POST(request: NextRequest) {
 
     let image = ogImage || ogImageSecure || twitterImage || twitterImageSrc || linkImage || thumbnailUrl || schemaImage || msImage || '';
 
+    if (!image) {
+      console.warn(`[Metadata] No meta tag images found for ${url}. Will try CSS and <img> fallbacks.`);
+    }
+
     // Make image URL absolute if found
     if (image) {
       const originalImage = image;
@@ -163,18 +205,26 @@ export async function POST(request: NextRequest) {
       console.log(`[Metadata] No meta tag images found, trying alternatives...`);
 
       // No meta tag image found, try inline styles
+      console.log(`[Metadata] Attempting CSS background-image extraction...`);
       const styleImage = extractImageFromStyles();
       if (styleImage) {
         image = makeAbsoluteUrl(styleImage, url);
         console.log(`[Metadata] Found image in CSS styles: ${image}`);
       } else {
+        console.log(`[Metadata] No CSS background images found`);
+
         // Fall back to first img tag
+        console.log(`[Metadata] Attempting to find first <img> tag...`);
         const firstImg = $('img').first().attr('src') || '';
+        const imgCount = $('img').length;
+        console.log(`[Metadata] Found ${imgCount} <img> tags on page`);
+
         if (firstImg) {
           image = makeAbsoluteUrl(firstImg, url);
           console.log(`[Metadata] Found first <img> tag: ${image}`);
         } else {
-          console.warn(`[Metadata] No images found at all for: ${url}`);
+          console.warn(`[Metadata] ⚠️ NO IMAGES FOUND AT ALL for: ${url}`);
+          console.warn(`[Metadata] Summary - No images in: meta tags, CSS, or <img> elements`);
         }
       }
     }
