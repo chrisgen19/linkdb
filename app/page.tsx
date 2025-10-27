@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Grid, AutoSizer } from 'react-virtualized';
 import 'react-virtualized/styles.css';
+import { Star, Eye, Edit2, Trash2 } from 'lucide-react';
 
 interface Link {
   id: string;
@@ -743,10 +744,12 @@ export default function Home() {
                             </a>
                             <button
                               onClick={() => handleToggleFavorite(link.id, link.favorite)}
-                              className="ml-2 text-2xl hover:scale-110 transition-transform"
+                              className="ml-2 hover:scale-110 transition-transform"
                               title={link.favorite ? 'Remove from favorites' : 'Add to favorites'}
                             >
-                              {link.favorite ? '⭐' : '☆'}
+                              <Star
+                                className={`w-5 h-5 ${link.favorite ? 'fill-yellow-400 text-yellow-400' : 'text-gray-400'}`}
+                              />
                             </button>
                           </div>
                           <a
@@ -778,21 +781,24 @@ export default function Home() {
                                 {new Date(link.createdAt).toLocaleDateString()}
                               </span>
                               <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                                👁️ {link.clickCount}
+                                <Eye className="w-4 h-4" />
+                                {link.clickCount}
                               </span>
                             </div>
                             <div className="flex gap-3">
                               <button
                                 onClick={() => handleEdit(link)}
-                                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium"
+                                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center gap-1"
+                                title="Edit"
                               >
-                                Edit
+                                <Edit2 className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => handleDelete(link.id)}
-                                className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium"
+                                className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 flex items-center gap-1"
+                                title="Delete"
                               >
-                                Delete
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
                           </div>

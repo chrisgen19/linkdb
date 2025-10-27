@@ -31,7 +31,8 @@
       "Bash(npm uninstall react-window react-virtualized-auto-sizer)",
       "Bash(npm install react-virtualized)",
       "Bash(npm install --save-dev @types/react-virtualized)",
-      "Bash(curl -s http://localhost:3001/)"
+      "Bash(curl -s http://localhost:3001/)",
+      "Bash(npm install lucide-react)"
     ],
     "deny": [],
     "ask": []
