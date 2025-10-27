@@ -21,23 +21,102 @@ export async function POST(request: NextRequest) {
     console.log(`[Metadata] Fetching metadata for: ${url}`);
 
     // Fetch the URL
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; LinkDB/1.0)',
-      },
+    let response;
+    try {
+      response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; LinkDB/1.0)',
+        },
+        redirect: 'follow',
+      });
+    } catch (fetchError) {
+      console.error(`[Metadata] ❌ FETCH FAILED for: ${url}`, {
+        error: fetchError instanceof Error ? fetchError.message : 'Unknown error',
+        errorType: fetchError instanceof Error ? fetchError.constructor.name : typeof fetchError,
+        possibleCauses: [
+          'Network error / Timeout',
+          'DNS resolution failed',
+          'SSL/TLS certificate error',
+          'CORS blocking request',
+          'Invalid URL format',
+        ],
+      });
+      return NextResponse.json(
+        { error: `Cannot fetch URL: ${fetchError instanceof Error ? fetchError.message : 'Network error'}` },
+        { status: 500 }
+      );
+    }
+
+    console.log(`[Metadata] Response received:`, {
+      url,
+      status: response.status,
+      statusText: response.statusText,
+      contentType: response.headers.get('content-type'),
+      contentLength: response.headers.get('content-length'),
+      redirected: response.redirected,
+      finalUrl: response.url,
     });
 
     if (!response.ok) {
-      console.error(`[Metadata] Failed to fetch URL: ${url} - Status: ${response.status}`);
+      const errorDetails = {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+      };
+
+      console.error(`[Metadata] ❌ HTTP ERROR: ${response.status} ${response.statusText}`, errorDetails);
+
+      // Provide specific error messages based on status code
+      if (response.status === 403) {
+        console.error(`[Metadata] 403 Forbidden - Server blocked the request. Possible causes: Bot detection, IP blocking, or authentication required`);
+      } else if (response.status === 404) {
+        console.error(`[Metadata] 404 Not Found - URL does not exist`);
+      } else if (response.status === 429) {
+        console.error(`[Metadata] 429 Too Many Requests - Rate limited by server`);
+      } else if (response.status >= 500) {
+        console.error(`[Metadata] ${response.status} Server Error - The website's server is having issues`);
+      }
+
       return NextResponse.json(
-        { error: 'Failed to fetch URL' },
+        { error: `Failed to fetch URL: ${response.status} ${response.statusText}` },
         { status: response.status }
       );
     }
 
-    const html = await response.text();
-    const $ = cheerio.load(html);
-    console.log(`[Metadata] Successfully loaded HTML for: ${url}`);
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
+      console.warn(`[Metadata] ⚠️ WARNING: Content-Type is not HTML: ${contentType}. May not extract metadata properly.`);
+    }
+
+    let html;
+    try {
+      html = await response.text();
+      console.log(`[Metadata] ✅ Successfully fetched HTML (${html.length} characters)`);
+    } catch (parseError) {
+      console.error(`[Metadata] ❌ Failed to parse response body:`, {
+        error: parseError instanceof Error ? parseError.message : 'Unknown error',
+      });
+      return NextResponse.json(
+        { error: 'Failed to read response body' },
+        { status: 500 }
+      );
+    }
+
+    let $;
+    try {
+      $ = cheerio.load(html);
+      console.log(`[Metadata] ✅ Successfully parsed HTML with Cheerio`);
+    } catch (cheerioError) {
+      console.error(`[Metadata] ❌ Failed to parse HTML with Cheerio:`, {
+        error: cheerioError instanceof Error ? cheerioError.message : 'Unknown error',
+        htmlPreview: html.substring(0, 200) + '...',
+      });
+      return NextResponse.json(
+        { error: 'Failed to parse HTML' },
+        { status: 500 }
+      );
+    }
 
     // Extract title from multiple sources
     const ogTitle = $('meta[property="og:title"]').attr('content') || '';
