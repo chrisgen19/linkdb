@@ -26,6 +26,7 @@ model Link {
   title       String?
   image       String?
   favorite    Boolean  @default(false)
+  clickCount  Int      @default(0)
   actressId   String?
   actress     Actress? @relation(fields: [actressId], references: [id], onDelete: SetNull)
   userId      String

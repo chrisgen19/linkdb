@@ -13,6 +13,7 @@ interface Link {
   title: string | null;
   image: string | null;
   favorite: boolean;
+  clickCount: number;
   actressId: string | null;
   actress: { id: string; name: string } | null;
   createdAt: string;
@@ -297,6 +298,21 @@ export default function Home() {
       setSelectedActress(null);
     }
     setShowModal(true);
+  };
+
+  const handleLinkClick = async (linkId: string) => {
+    try {
+      const response = await fetch(`/api/links/${linkId}/click`, {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        const updatedLink = await response.json();
+        setLinks(links.map((link) => (link.id === linkId ? updatedLink : link)));
+      }
+    } catch (err) {
+      console.error('Error tracking click:', err);
+    }
   };
 
   // Show loading state while checking authentication
@@ -689,6 +705,7 @@ export default function Home() {
                             href={link.url}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={() => handleLinkClick(link.id)}
                             className="relative h-48 bg-gray-200 dark:bg-gray-700 block"
                           >
                             <Image
@@ -706,6 +723,7 @@ export default function Home() {
                               href={link.url}
                               target="_blank"
                               rel="noopener noreferrer"
+                              onClick={() => handleLinkClick(link.id)}
                               className="flex-1"
                             >
                               <h3 className="font-semibold text-lg text-gray-900 dark:text-white line-clamp-2 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
@@ -724,6 +742,7 @@ export default function Home() {
                             href={link.url}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={() => handleLinkClick(link.id)}
                             className="text-blue-600 dark:text-blue-400 hover:underline text-sm block mb-2 truncate"
                           >
                             {link.url}
@@ -743,9 +762,14 @@ export default function Home() {
                             </div>
                           )}
                           <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {new Date(link.createdAt).toLocaleDateString()}
-                            </span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {new Date(link.createdAt).toLocaleDateString()}
+                              </span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                                👁️ {link.clickCount}
+                              </span>
+                            </div>
                             <div className="flex gap-3">
                               <button
                                 onClick={() => handleEdit(link)}
