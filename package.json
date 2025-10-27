@@ -9,22 +9,25 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "next": "^15.0.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
     "@prisma/client": "^5.8.0",
-    "cheerio": "^1.0.0-rc.12"
+    "bcryptjs": "^3.0.2",
+    "cheerio": "^1.0.0-rc.12",
+    "next": "^15.0.0",
+    "next-auth": "^4.24.11",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^5",
-    "tailwindcss": "^3.4.0",
-    "postcss": "^8",
     "autoprefixer": "^10.0.1",
     "eslint": "^8",
     "eslint-config-next": "^15.0.0",
-    "prisma": "^5.8.0"
+    "postcss": "^8",
+    "prisma": "^5.8.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5"
   }
 }

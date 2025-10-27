@@ -15,7 +15,12 @@
       "Bash(docker exec postgres_db psql -U myuser -d linkdb -c \"SELECT id, url, title, favorite, \"\"actressId\"\", \"\"createdAt\"\" FROM \"\"Link\"\" LIMIT 5;\")",
       "Bash(curl -s http://localhost:3000/api/links)",
       "Bash(lsof -i :3000)",
-      "Bash(npm run build)"
+      "Bash(npm run build)",
+      "Bash(docker exec postgres_db psql -U myuser -d linkdb -c \"SELECT COUNT(*) FROM \"\"Link\"\";\")",
+      "Bash(npx tsx scripts/migrate-existing-links.ts)",
+      "Bash(docker exec postgres_db psql -U myuser -d linkdb -c \"SELECT email FROM \"\"User\"\";\")",
+      "Bash(npx tsx scripts/update-admin-user.ts)",
+      "Bash(docker exec postgres_db psql -U myuser -d linkdb -c \"SELECT email, name FROM \"\"User\"\";\")"
     ],
     "deny": [],
     "ask": []

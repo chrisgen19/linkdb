@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession, signOut } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 
 interface Link {
@@ -20,6 +22,8 @@ interface Actress {
 }
 
 export default function Home() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
   const [url, setUrl] = useState('');
   const [favorite, setFavorite] = useState(false);
   const [actressInput, setActressInput] = useState('');
@@ -32,11 +36,20 @@ export default function Home() {
   const [error, setError] = useState('');
   const [fetchingLinks, setFetchingLinks] = useState(true);
 
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/login');
+    }
+  }, [status, router]);
+
   // Fetch all links and actresses on mount
   useEffect(() => {
-    fetchLinks();
-    fetchActresses();
-  }, []);
+    if (status === 'authenticated') {
+      fetchLinks();
+      fetchActresses();
+    }
+  }, [status]);
 
   // Filter actresses based on input
   useEffect(() => {
@@ -188,16 +201,48 @@ export default function Home() {
     setShowActressDropdown(false);
   };
 
+  // Show loading state while checking authentication
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+        <div className="text-center text-gray-600 dark:text-gray-400">
+          Loading...
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render content if not authenticated
+  if (status === 'unauthenticated') {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 py-12 px-4">
       <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold text-gray-900 dark:text-white mb-4">
-            LinkDB
-          </h1>
-          <p className="text-xl text-gray-600 dark:text-gray-300">
-            Save and organize your favorite links
-          </p>
+        {/* Header with user info and logout */}
+        <div className="flex justify-between items-center mb-8">
+          <div className="text-center flex-1">
+            <h1 className="text-5xl font-bold text-gray-900 dark:text-white mb-4">
+              LinkDB
+            </h1>
+            <p className="text-xl text-gray-600 dark:text-gray-300">
+              Save and organize your favorite links
+            </p>
+          </div>
+          <div className="flex items-center gap-4">
+            {session?.user?.email && (
+              <span className="text-gray-600 dark:text-gray-400 text-sm">
+                {session.user.email}
+              </span>
+            )}
+            <button
+              onClick={() => signOut()}
+              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm"
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         {/* Add Link Form */}
