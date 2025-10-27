@@ -16,6 +16,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
     }
 
+    console.log(`[Metadata] Fetching metadata for: ${url}`);
+
     // Fetch the URL
     const response = await fetch(url, {
       headers: {
@@ -24,6 +26,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
+      console.error(`[Metadata] Failed to fetch URL: ${url} - Status: ${response.status}`);
       return NextResponse.json(
         { error: 'Failed to fetch URL' },
         { status: response.status }
@@ -32,6 +35,7 @@ export async function POST(request: NextRequest) {
 
     const html = await response.text();
     const $ = cheerio.load(html);
+    console.log(`[Metadata] Successfully loaded HTML for: ${url}`);
 
     // Extract metadata
     let title =
@@ -84,50 +88,87 @@ export async function POST(request: NextRequest) {
       return styleImage;
     };
 
-    let image =
-      $('meta[property="og:image"]').attr('content') ||
-      $('meta[name="twitter:image"]').attr('content') ||
-      $('link[rel="image_src"]').attr('href') ||
-      '';
+    const ogImage = $('meta[property="og:image"]').attr('content') || '';
+    const twitterImage = $('meta[name="twitter:image"]').attr('content') || '';
+    const linkImage = $('link[rel="image_src"]').attr('href') || '';
+
+    console.log(`[Metadata] Image extraction for ${url}:`, {
+      ogImage,
+      twitterImage,
+      linkImage,
+    });
+
+    let image = ogImage || twitterImage || linkImage || '';
 
     // Make image URL absolute if found
     if (image) {
+      const originalImage = image;
       image = makeAbsoluteUrl(image, url);
+      console.log(`[Metadata] Found meta image: ${originalImage} → ${image}`);
 
       // Check if the image is accessible, if not try alternatives
       const isAccessible = await isImageAccessible(image);
       if (!isAccessible) {
-        console.log(`og:image returned 404: ${image}, trying alternative sources...`);
+        console.warn(`[Metadata] Image not accessible (404): ${image}, trying alternatives...`);
 
         // Try to find image in inline styles
         const styleImage = extractImageFromStyles();
         if (styleImage) {
           image = makeAbsoluteUrl(styleImage, url);
+          console.log(`[Metadata] Found image in CSS styles: ${image}`);
         } else {
           // Fall back to first img tag
           const firstImg = $('img').first().attr('src') || '';
-          image = firstImg ? makeAbsoluteUrl(firstImg, url) : '';
+          if (firstImg) {
+            image = makeAbsoluteUrl(firstImg, url);
+            console.log(`[Metadata] Fallback to first <img> tag: ${image}`);
+          } else {
+            image = '';
+            console.warn(`[Metadata] No fallback images found for: ${url}`);
+          }
         }
+      } else {
+        console.log(`[Metadata] Image is accessible: ${image}`);
       }
     } else {
+      console.log(`[Metadata] No meta tag images found, trying alternatives...`);
+
       // No meta tag image found, try inline styles
       const styleImage = extractImageFromStyles();
       if (styleImage) {
         image = makeAbsoluteUrl(styleImage, url);
+        console.log(`[Metadata] Found image in CSS styles: ${image}`);
       } else {
         // Fall back to first img tag
         const firstImg = $('img').first().attr('src') || '';
-        image = firstImg ? makeAbsoluteUrl(firstImg, url) : '';
+        if (firstImg) {
+          image = makeAbsoluteUrl(firstImg, url);
+          console.log(`[Metadata] Found first <img> tag: ${image}`);
+        } else {
+          console.warn(`[Metadata] No images found at all for: ${url}`);
+        }
       }
     }
 
-    return NextResponse.json({
+    const result = {
       url,
       title: title.trim(),
       image: image || null,
+    };
+
+    console.log(`[Metadata] Final result for ${url}:`, {
+      title: result.title,
+      hasImage: !!result.image,
+      imageUrl: result.image,
     });
+
+    return NextResponse.json(result);
   } catch (error) {
-    console.error('Error fetching metadata:', error);
+    console.error(`[Metadata] Error fetching metadata for ${url}:`, error);
+    console.error('[Metadata] Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return NextResponse.json(
       { error: 'Failed to extract metadata' },
       { status: 500 }
