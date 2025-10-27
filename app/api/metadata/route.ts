@@ -221,6 +221,46 @@ export async function POST(request: NextRequest) {
       return styleImage;
     };
 
+    // Helper function to find any image URL in the entire HTML content
+    const findImageUrlInHtml = (): string => {
+      console.log(`[Metadata] Searching entire HTML for image file URLs (.jpg, .png, .gif, .webp)...`);
+
+      // Search for common image extensions in the HTML
+      const imageUrlPatterns = [
+        // Match http(s):// URLs ending with image extensions
+        /(https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg))(?:[?#][^\s"'<>]*)?/gi,
+      ];
+
+      const foundUrls: string[] = [];
+
+      for (const pattern of imageUrlPatterns) {
+        const matches = html.match(pattern);
+        if (matches) {
+          foundUrls.push(...matches);
+        }
+      }
+
+      if (foundUrls.length > 0) {
+        // Filter out common small/icon images
+        const filtered = foundUrls.filter(url => {
+          const lowerUrl = url.toLowerCase();
+          return !lowerUrl.includes('icon') &&
+                 !lowerUrl.includes('logo') &&
+                 !lowerUrl.includes('avatar') &&
+                 !lowerUrl.includes('sprite') &&
+                 !lowerUrl.includes('1x1') &&
+                 !lowerUrl.includes('pixel');
+        });
+
+        const selectedUrl = filtered.length > 0 ? filtered[0] : foundUrls[0];
+        console.log(`[Metadata] Found ${foundUrls.length} image URLs in HTML, selected: ${selectedUrl}`);
+        return selectedUrl;
+      }
+
+      console.log(`[Metadata] No image URLs found in HTML content`);
+      return '';
+    };
+
     // Extract all possible image sources
     const ogImage = $('meta[property="og:image"]').attr('content') || '';
     const ogImageSecure = $('meta[property="og:image:secure_url"]').attr('content') || '';
@@ -273,8 +313,16 @@ export async function POST(request: NextRequest) {
             image = makeAbsoluteUrl(firstImg, url);
             console.log(`[Metadata] Fallback to first <img> tag: ${image}`);
           } else {
-            image = '';
-            console.warn(`[Metadata] No fallback images found for: ${url}`);
+            // Final fallback: search entire HTML for any image URLs
+            console.log(`[Metadata] No <img> tags, searching entire HTML content...`);
+            const htmlImageUrl = findImageUrlInHtml();
+            if (htmlImageUrl) {
+              image = htmlImageUrl;
+              console.log(`[Metadata] 🎯 Found image URL in HTML content: ${image}`);
+            } else {
+              image = '';
+              console.warn(`[Metadata] No fallback images found for: ${url}`);
+            }
           }
         }
       } else {
@@ -302,8 +350,16 @@ export async function POST(request: NextRequest) {
           image = makeAbsoluteUrl(firstImg, url);
           console.log(`[Metadata] Found first <img> tag: ${image}`);
         } else {
-          console.warn(`[Metadata] ⚠️ NO IMAGES FOUND AT ALL for: ${url}`);
-          console.warn(`[Metadata] Summary - No images in: meta tags, CSS, or <img> elements`);
+          // Final fallback: search entire HTML for any image URLs
+          console.log(`[Metadata] No <img> tags found, searching entire HTML content...`);
+          const htmlImageUrl = findImageUrlInHtml();
+          if (htmlImageUrl) {
+            image = htmlImageUrl; // Already absolute URL from regex
+            console.log(`[Metadata] 🎯 Found image URL in HTML content: ${image}`);
+          } else {
+            console.warn(`[Metadata] ⚠️ NO IMAGES FOUND AT ALL for: ${url}`);
+            console.warn(`[Metadata] Summary - No images in: meta tags, CSS, <img> elements, or HTML content`);
+          }
         }
       }
     }
