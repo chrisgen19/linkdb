@@ -39,12 +39,26 @@ export async function POST(request: NextRequest) {
     const $ = cheerio.load(html);
     console.log(`[Metadata] Successfully loaded HTML for: ${url}`);
 
-    // Extract metadata
-    let title =
-      $('meta[property="og:title"]').attr('content') ||
-      $('meta[name="twitter:title"]').attr('content') ||
-      $('title').text() ||
-      '';
+    // Extract title from multiple sources
+    const ogTitle = $('meta[property="og:title"]').attr('content') || '';
+    const twitterTitle = $('meta[name="twitter:title"]').attr('content') || '';
+    const schemaName = $('meta[itemprop="name"]').attr('content') || '';
+    const metaTitle = $('meta[name="title"]').attr('content') || '';
+    const dcTitle = $('meta[name="DC.title"]').attr('content') || '';
+    const h1Title = $('h1').first().text().trim() || '';
+    const htmlTitle = $('title').text().trim() || '';
+
+    console.log(`[Metadata] Title extraction for ${url}:`, {
+      ogTitle,
+      twitterTitle,
+      schemaName,
+      metaTitle,
+      dcTitle,
+      h1Title: h1Title.substring(0, 50) + (h1Title.length > 50 ? '...' : ''),
+      htmlTitle,
+    });
+
+    let title = ogTitle || twitterTitle || schemaName || metaTitle || dcTitle || htmlTitle || h1Title || '';
 
     // Helper function to make URLs absolute
     const makeAbsoluteUrl = (imageUrl: string, baseUrl: string): string => {
@@ -90,17 +104,30 @@ export async function POST(request: NextRequest) {
       return styleImage;
     };
 
+    // Extract all possible image sources
     const ogImage = $('meta[property="og:image"]').attr('content') || '';
+    const ogImageSecure = $('meta[property="og:image:secure_url"]').attr('content') || '';
     const twitterImage = $('meta[name="twitter:image"]').attr('content') || '';
+    const twitterImageSrc = $('meta[name="twitter:image:src"]').attr('content') || '';
     const linkImage = $('link[rel="image_src"]').attr('href') || '';
+    const thumbnailUrl = $('meta[property="thumbnailUrl"]').attr('content') ||
+                         $('meta[name="thumbnailUrl"]').attr('content') ||
+                         $('meta[itemprop="thumbnailUrl"]').attr('content') || '';
+    const schemaImage = $('meta[itemprop="image"]').attr('content') || '';
+    const msImage = $('meta[name="msapplication-TileImage"]').attr('content') || '';
 
     console.log(`[Metadata] Image extraction for ${url}:`, {
       ogImage,
+      ogImageSecure,
       twitterImage,
+      twitterImageSrc,
       linkImage,
+      thumbnailUrl,
+      schemaImage,
+      msImage,
     });
 
-    let image = ogImage || twitterImage || linkImage || '';
+    let image = ogImage || ogImageSecure || twitterImage || twitterImageSrc || linkImage || thumbnailUrl || schemaImage || msImage || '';
 
     // Make image URL absolute if found
     if (image) {
