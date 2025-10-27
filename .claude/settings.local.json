@@ -9,7 +9,13 @@
       "Bash(docker exec postgres_db psql -U myuser -d mydatabase -c \"CREATE DATABASE linkdb;\")",
       "Bash(docker exec postgres_db psql -U myuser -d linkdb -c \"\\dt\")",
       "Bash(docker exec postgres_db psql -U myuser -d linkdb -c \"\\d \"\"Link\"\"\")",
-      "Bash(docker-compose up -d)"
+      "Bash(docker-compose up -d)",
+      "Bash(npx prisma generate)",
+      "Bash(npx prisma db push)",
+      "Bash(docker exec postgres_db psql -U myuser -d linkdb -c \"SELECT id, url, title, favorite, \"\"actressId\"\", \"\"createdAt\"\" FROM \"\"Link\"\" LIMIT 5;\")",
+      "Bash(curl -s http://localhost:3000/api/links)",
+      "Bash(lsof -i :3000)",
+      "Bash(npm run build)"
     ],
     "deny": [],
     "ask": []

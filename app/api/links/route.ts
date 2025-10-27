@@ -5,6 +5,9 @@ import { prisma } from '@/lib/prisma';
 export async function GET() {
   try {
     const links = await prisma.link.findMany({
+      include: {
+        actress: true,
+      },
       orderBy: {
         createdAt: 'desc',
       },
@@ -23,7 +26,7 @@ export async function GET() {
 // POST a new link
 export async function POST(request: NextRequest) {
   try {
-    const { url, title, image } = await request.json();
+    const { url, title, image, favorite, actressId } = await request.json();
 
     if (!url) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
@@ -47,6 +50,11 @@ export async function POST(request: NextRequest) {
         url,
         title: title || null,
         image: image || null,
+        favorite: favorite || false,
+        actressId: actressId || null,
+      },
+      include: {
+        actress: true,
       },
     });
 
@@ -55,6 +63,35 @@ export async function POST(request: NextRequest) {
     console.error('Error creating link:', error);
     return NextResponse.json(
       { error: 'Failed to create link' },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH a link (update favorite status)
+export async function PATCH(request: NextRequest) {
+  try {
+    const { id, favorite } = await request.json();
+
+    if (!id) {
+      return NextResponse.json({ error: 'ID is required' }, { status: 400 });
+    }
+
+    const link = await prisma.link.update({
+      where: { id },
+      data: {
+        favorite,
+      },
+      include: {
+        actress: true,
+      },
+    });
+
+    return NextResponse.json(link);
+  } catch (error) {
+    console.error('Error updating link:', error);
+    return NextResponse.json(
+      { error: 'Failed to update link' },
       { status: 500 }
     );
   }
