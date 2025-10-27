@@ -25,3 +25,15 @@ body {
     text-wrap: balance;
   }
 }
+
+/* Grid container height - full viewport on mobile, with space for header on desktop */
+.grid-container {
+  height: 100vh;
+  min-height: 400px;
+}
+
+@media (min-width: 768px) {
+  .grid-container {
+    height: calc(100vh - 120px);
+  }
+}

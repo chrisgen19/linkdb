@@ -683,7 +683,7 @@ export default function Home() {
               : `No links found matching "${searchQuery}"`}
           </div>
         ) : (
-          <div className="transition-all duration-300 ease-in-out" style={{ height: 'calc(100vh - 120px)', minHeight: '400px' }}>
+          <div className="transition-all duration-300 ease-in-out grid-container">
             <AutoSizer>
               {({ height, width }) => {
                 // Calculate columns based on width
