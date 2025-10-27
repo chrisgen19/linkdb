@@ -661,7 +661,7 @@ export default function Home() {
               </div>
             ) : searchQuery ? (
               <div className="mb-4 text-gray-600 dark:text-gray-400">
-                Found {filteredLinks.length} {filteredLinks.length === 1 ? 'result' : 'results'} for "{searchQuery}"
+                Found {filteredLinks.length} {filteredLinks.length === 1 ? 'result' : 'results'} for &quot;{searchQuery}&quot;
               </div>
             ) : null}
           </>
