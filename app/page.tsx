@@ -93,9 +93,11 @@ export default function Home() {
   };
 
   // Filter actresses for search dropdown
-  const searchFilteredActresses = actresses.filter((actress) =>
-    actress.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const searchFilteredActresses = searchType === 'actress'
+    ? actresses.filter((actress) =>
+        actress.name.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : [];
 
   // Filter links based on search
   let filteredLinks = links.filter((link) => {
@@ -429,9 +431,8 @@ export default function Home() {
               onChange={(e) => {
                 const newType = e.target.value as 'links' | 'actress' | 'favorites' | 'most-viewed';
                 setSearchType(newType);
-                if (newType === 'favorites' || newType === 'most-viewed') {
-                  setSearchQuery('');
-                }
+                setSearchQuery(''); // Clear search when changing type
+                setShowSearchActressDropdown(false);
               }}
               className="px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
@@ -461,16 +462,18 @@ export default function Home() {
                 placeholder={
                   searchType === 'favorites'
                     ? 'Showing favorite links...'
+                    : searchType === 'most-viewed'
+                    ? 'Showing most viewed links...'
                     : searchType === 'links'
                     ? 'Search by title or URL...'
                     : 'Search by actress name...'
                 }
-                disabled={searchType === 'favorites'}
+                disabled={searchType === 'favorites' || searchType === 'most-viewed'}
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               />
 
               {/* Actress Dropdown for Search */}
-              {searchType === 'actress' && showSearchActressDropdown && (
+              {searchType === 'actress' && showSearchActressDropdown && actresses.length > 0 && (
                 <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
                   {searchFilteredActresses.length > 0 ? (
                     searchFilteredActresses.map((actress) => (
@@ -488,9 +491,18 @@ export default function Home() {
                     ))
                   ) : (
                     <div className="px-4 py-2 text-gray-500 dark:text-gray-400 text-sm">
-                      No actresses found
+                      No actresses match &quot;{searchQuery}&quot;
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Message when no actresses in database */}
+              {searchType === 'actress' && showSearchActressDropdown && actresses.length === 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg p-4">
+                  <div className="text-gray-500 dark:text-gray-400 text-sm">
+                    No actresses in database yet. Add a link with an actress tag first.
+                  </div>
                 </div>
               )}
             </div>
