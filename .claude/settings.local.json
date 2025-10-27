@@ -20,7 +20,17 @@
       "Bash(npx tsx scripts/migrate-existing-links.ts)",
       "Bash(docker exec postgres_db psql -U myuser -d linkdb -c \"SELECT email FROM \"\"User\"\";\")",
       "Bash(npx tsx scripts/update-admin-user.ts)",
-      "Bash(docker exec postgres_db psql -U myuser -d linkdb -c \"SELECT email, name FROM \"\"User\"\";\")"
+      "Bash(docker exec postgres_db psql -U myuser -d linkdb -c \"SELECT email, name FROM \"\"User\"\";\")",
+      "Bash(npm install react-window)",
+      "Bash(npm install --save-dev @types/react-window)",
+      "Bash(npm install react-virtualized-auto-sizer)",
+      "Bash(cat node_modules/react-window/package.json)",
+      "Bash(npm run dev)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/)",
+      "Bash(cat node_modules/react-window/dist/react-window.d.ts)",
+      "Bash(npm uninstall react-window react-virtualized-auto-sizer)",
+      "Bash(npm install react-virtualized)",
+      "Bash(npm install --save-dev @types/react-virtualized)"
     ],
     "deny": [],
     "ask": []
