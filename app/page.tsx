@@ -38,6 +38,7 @@ export default function Home() {
   const [showModal, setShowModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchType, setSearchType] = useState<'links' | 'actress'>('links');
+  const [showSearchActressDropdown, setShowSearchActressDropdown] = useState(false);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -65,6 +66,11 @@ export default function Home() {
       setFilteredActresses(actresses);
     }
   }, [actressInput, actresses]);
+
+  // Filter actresses for search dropdown
+  const searchFilteredActresses = actresses.filter((actress) =>
+    actress.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   // Filter links based on search
   const filteredLinks = links.filter((link) => {
@@ -292,19 +298,60 @@ export default function Home() {
               <option value="actress">Search Actress</option>
             </select>
 
-            {/* Search Input */}
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={searchType === 'links' ? 'Search by title or URL...' : 'Search by actress name...'}
-              className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            {/* Search Input with Actress Dropdown */}
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (searchType === 'actress') {
+                    setShowSearchActressDropdown(true);
+                  }
+                }}
+                onFocus={() => {
+                  if (searchType === 'actress') {
+                    setShowSearchActressDropdown(true);
+                  }
+                }}
+                onBlur={() => setTimeout(() => setShowSearchActressDropdown(false), 200)}
+                placeholder={searchType === 'links' ? 'Search by title or URL...' : 'Search by actress name...'}
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+
+              {/* Actress Dropdown for Search */}
+              {searchType === 'actress' && showSearchActressDropdown && (
+                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                  {searchFilteredActresses.length > 0 ? (
+                    searchFilteredActresses.map((actress) => (
+                      <button
+                        key={actress.id}
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery(actress.name);
+                          setShowSearchActressDropdown(false);
+                        }}
+                        className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-600 last:border-b-0"
+                      >
+                        {actress.name}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-4 py-2 text-gray-500 dark:text-gray-400 text-sm">
+                      No actresses found
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Clear Search Button */}
             {searchQuery && (
               <button
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setSearchQuery('');
+                  setShowSearchActressDropdown(false);
+                }}
                 className="px-4 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-lg transition-colors"
               >
                 Clear
