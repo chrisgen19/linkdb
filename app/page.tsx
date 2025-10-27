@@ -36,6 +36,8 @@ export default function Home() {
   const [error, setError] = useState('');
   const [fetchingLinks, setFetchingLinks] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchType, setSearchType] = useState<'links' | 'actress'>('links');
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -63,6 +65,23 @@ export default function Home() {
       setFilteredActresses(actresses);
     }
   }, [actressInput, actresses]);
+
+  // Filter links based on search
+  const filteredLinks = links.filter((link) => {
+    if (!searchQuery.trim()) return true;
+
+    const query = searchQuery.toLowerCase();
+
+    if (searchType === 'links') {
+      // Search by title or URL
+      const titleMatch = link.title?.toLowerCase().includes(query);
+      const urlMatch = link.url.toLowerCase().includes(query);
+      return titleMatch || urlMatch;
+    } else {
+      // Search by actress name
+      return link.actress?.name.toLowerCase().includes(query);
+    }
+  });
 
   const fetchLinks = async () => {
     try {
@@ -260,6 +279,40 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Search Bar */}
+        <div className="mb-8">
+          <div className="flex gap-3">
+            {/* Search Type Dropdown */}
+            <select
+              value={searchType}
+              onChange={(e) => setSearchType(e.target.value as 'links' | 'actress')}
+              className="px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="links">Search Links</option>
+              <option value="actress">Search Actress</option>
+            </select>
+
+            {/* Search Input */}
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={searchType === 'links' ? 'Search by title or URL...' : 'Search by actress name...'}
+              className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+
+            {/* Clear Search Button */}
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="px-4 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-lg transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Add Link Modal */}
         {showModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -394,6 +447,13 @@ export default function Home() {
           </div>
         )}
 
+        {/* Search Results Count */}
+        {!fetchingLinks && links.length > 0 && searchQuery && (
+          <div className="mb-4 text-gray-600 dark:text-gray-400">
+            Found {filteredLinks.length} {filteredLinks.length === 1 ? 'result' : 'results'} for "{searchQuery}"
+          </div>
+        )}
+
         {/* Links Grid */}
         {fetchingLinks ? (
           <div className="text-center text-gray-600 dark:text-gray-400">
@@ -403,9 +463,13 @@ export default function Home() {
           <div className="text-center text-gray-600 dark:text-gray-400">
             No links saved yet. Add your first link above!
           </div>
+        ) : filteredLinks.length === 0 ? (
+          <div className="text-center text-gray-600 dark:text-gray-400">
+            No links found matching "{searchQuery}"
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {links.map((link) => (
+            {filteredLinks.map((link) => (
               <div
                 key={link.id}
                 className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition-shadow"
