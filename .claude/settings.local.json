@@ -30,7 +30,8 @@
       "Bash(cat node_modules/react-window/dist/react-window.d.ts)",
       "Bash(npm uninstall react-window react-virtualized-auto-sizer)",
       "Bash(npm install react-virtualized)",
-      "Bash(npm install --save-dev @types/react-virtualized)"
+      "Bash(npm install --save-dev @types/react-virtualized)",
+      "Bash(curl -s http://localhost:3001/)"
     ],
     "deny": [],
     "ask": []

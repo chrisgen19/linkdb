@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Grid, AutoSizer, WindowScroller } from 'react-virtualized';
+import { Grid, AutoSizer } from 'react-virtualized';
 import 'react-virtualized/styles.css';
 
 interface Link {
@@ -598,139 +598,133 @@ export default function Home() {
               : `No links found matching "${searchQuery}"`}
           </div>
         ) : (
-          <WindowScroller>
-            {({ height, isScrolling, onChildScroll, scrollTop }) => (
-              <AutoSizer disableHeight>
-                {({ width }) => {
-                  // Calculate columns based on width
-                  const getColumnCount = () => {
-                    if (width >= 1024) return 3; // lg
-                    if (width >= 768) return 2;  // md
-                    return 1;                     // mobile
-                  };
+          <div style={{ height: 'calc(100vh - 300px)', minHeight: '600px' }}>
+            <AutoSizer>
+              {({ height, width }) => {
+                // Calculate columns based on width
+                const getColumnCount = () => {
+                  if (width >= 1024) return 3; // lg
+                  if (width >= 768) return 2;  // md
+                  return 1;                     // mobile
+                };
 
-                  const columnCount = getColumnCount();
-                  const columnWidth = width / columnCount;
-                  const rowHeight = 420; // Fixed height for each card
-                  const rowCount = Math.ceil(filteredLinks.length / columnCount);
+                const columnCount = getColumnCount();
+                const columnWidth = width / columnCount;
+                const rowHeight = 420; // Fixed height for each card
+                const rowCount = Math.ceil(filteredLinks.length / columnCount);
 
-                  const cellRenderer = ({ columnIndex, rowIndex, key, style }: any) => {
-                    const index = rowIndex * columnCount + columnIndex;
-                    if (index >= filteredLinks.length) return null;
+                const cellRenderer = ({ columnIndex, rowIndex, key, style }: any) => {
+                  const index = rowIndex * columnCount + columnIndex;
+                  if (index >= filteredLinks.length) return null;
 
-                    const link = filteredLinks[index];
+                  const link = filteredLinks[index];
 
-                    return (
-                      <div key={key} style={{
-                        ...style,
-                        padding: '12px',
-                      }}>
-                        <div
-                          className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition-shadow h-full"
-                        >
-                          {link.image && (
+                  return (
+                    <div key={key} style={{
+                      ...style,
+                      padding: '12px',
+                    }}>
+                      <div
+                        className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition-shadow h-full"
+                      >
+                        {link.image && (
+                          <a
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="relative h-48 bg-gray-200 dark:bg-gray-700 block"
+                          >
+                            <Image
+                              src={link.image}
+                              alt={link.title || 'Link preview'}
+                              fill
+                              className="object-cover hover:opacity-90 transition-opacity"
+                              unoptimized
+                            />
+                          </a>
+                        )}
+                        <div className="p-4">
+                          <div className="flex items-start justify-between mb-2">
                             <a
                               href={link.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="relative h-48 bg-gray-200 dark:bg-gray-700 block"
+                              className="flex-1"
                             >
-                              <Image
-                                src={link.image}
-                                alt={link.title || 'Link preview'}
-                                fill
-                                className="object-cover hover:opacity-90 transition-opacity"
-                                unoptimized
-                              />
+                              <h3 className="font-semibold text-lg text-gray-900 dark:text-white line-clamp-2 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                                {link.title || 'Untitled'}
+                              </h3>
                             </a>
-                          )}
-                          <div className="p-4">
-                            <div className="flex items-start justify-between mb-2">
-                              <a
-                                href={link.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex-1"
-                              >
-                                <h3 className="font-semibold text-lg text-gray-900 dark:text-white line-clamp-2 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-                                  {link.title || 'Untitled'}
-                                </h3>
-                              </a>
+                            <button
+                              onClick={() => handleToggleFavorite(link.id, link.favorite)}
+                              className="ml-2 text-2xl hover:scale-110 transition-transform"
+                              title={link.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                            >
+                              {link.favorite ? '⭐' : '☆'}
+                            </button>
+                          </div>
+                          <a
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 dark:text-blue-400 hover:underline text-sm block mb-2 truncate"
+                          >
+                            {link.url}
+                          </a>
+                          {link.actress && (
+                            <div className="mb-3">
                               <button
-                                onClick={() => handleToggleFavorite(link.id, link.favorite)}
-                                className="ml-2 text-2xl hover:scale-110 transition-transform"
-                                title={link.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                                onClick={() => {
+                                  setSearchType('actress');
+                                  setSearchQuery(link.actress!.name);
+                                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                className="inline-block px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-sm rounded-full hover:bg-purple-200 dark:hover:bg-purple-800 transition-colors cursor-pointer"
                               >
-                                {link.favorite ? '⭐' : '☆'}
+                                {link.actress.name}
                               </button>
                             </div>
-                            <a
-                              href={link.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 dark:text-blue-400 hover:underline text-sm block mb-2 truncate"
-                            >
-                              {link.url}
-                            </a>
-                            {link.actress && (
-                              <div className="mb-3">
-                                <button
-                                  onClick={() => {
-                                    setSearchType('actress');
-                                    setSearchQuery(link.actress!.name);
-                                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                                  }}
-                                  className="inline-block px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-sm rounded-full hover:bg-purple-200 dark:hover:bg-purple-800 transition-colors cursor-pointer"
-                                >
-                                  {link.actress.name}
-                                </button>
-                              </div>
-                            )}
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">
-                                {new Date(link.createdAt).toLocaleDateString()}
-                              </span>
-                              <div className="flex gap-3">
-                                <button
-                                  onClick={() => handleEdit(link)}
-                                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleDelete(link.id)}
-                                  className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium"
-                                >
-                                  Delete
-                                </button>
-                              </div>
+                          )}
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {new Date(link.createdAt).toLocaleDateString()}
+                            </span>
+                            <div className="flex gap-3">
+                              <button
+                                onClick={() => handleEdit(link)}
+                                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDelete(link.id)}
+                                className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm font-medium"
+                              >
+                                Delete
+                              </button>
                             </div>
                           </div>
                         </div>
                       </div>
-                    );
-                  };
-
-                  return (
-                    <Grid
-                      autoHeight
-                      cellRenderer={cellRenderer}
-                      columnCount={columnCount}
-                      columnWidth={columnWidth}
-                      height={height}
-                      isScrolling={isScrolling}
-                      onScroll={onChildScroll}
-                      overscanRowCount={2}
-                      rowCount={rowCount}
-                      rowHeight={rowHeight}
-                      scrollTop={scrollTop}
-                      width={width}
-                    />
+                    </div>
                   );
-                }}
-              </AutoSizer>
-            )}
-          </WindowScroller>
+                };
+
+                return (
+                  <Grid
+                    cellRenderer={cellRenderer}
+                    columnCount={columnCount}
+                    columnWidth={columnWidth}
+                    height={height}
+                    rowCount={rowCount}
+                    rowHeight={rowHeight}
+                    width={width}
+                    overscanRowCount={2}
+                  />
+                );
+              }}
+            </AutoSizer>
+          </div>
         )}
       </div>
     </div>
