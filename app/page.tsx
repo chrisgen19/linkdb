@@ -41,7 +41,7 @@ export default function Home() {
   const [showModal, setShowModal] = useState(false);
   const [editingLink, setEditingLink] = useState<Link | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchType, setSearchType] = useState<'links' | 'actress' | 'favorites'>('links');
+  const [searchType, setSearchType] = useState<'links' | 'actress' | 'favorites' | 'most-viewed'>('links');
   const [showSearchActressDropdown, setShowSearchActressDropdown] = useState(false);
   const [showHeader, setShowHeader] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
@@ -97,10 +97,15 @@ export default function Home() {
   );
 
   // Filter links based on search
-  const filteredLinks = links.filter((link) => {
+  let filteredLinks = links.filter((link) => {
     // Handle favorites filter
     if (searchType === 'favorites') {
       return link.favorite;
+    }
+
+    // Handle most viewed filter
+    if (searchType === 'most-viewed') {
+      return true; // Show all links, will sort by clickCount below
     }
 
     // If no search query, show all
@@ -120,6 +125,11 @@ export default function Home() {
 
     return true;
   });
+
+  // Sort by click count if most-viewed filter is selected
+  if (searchType === 'most-viewed') {
+    filteredLinks = [...filteredLinks].sort((a, b) => b.clickCount - a.clickCount);
+  }
 
   const fetchLinks = async () => {
     try {
@@ -416,9 +426,9 @@ export default function Home() {
             <select
               value={searchType}
               onChange={(e) => {
-                const newType = e.target.value as 'links' | 'actress' | 'favorites';
+                const newType = e.target.value as 'links' | 'actress' | 'favorites' | 'most-viewed';
                 setSearchType(newType);
-                if (newType === 'favorites') {
+                if (newType === 'favorites' || newType === 'most-viewed') {
                   setSearchQuery('');
                 }
               }}
@@ -427,6 +437,7 @@ export default function Home() {
               <option value="links">Search Links</option>
               <option value="actress">Search Actress</option>
               <option value="favorites">Favorites</option>
+              <option value="most-viewed">Most Viewed</option>
             </select>
 
             {/* Search Input with Actress Dropdown */}
