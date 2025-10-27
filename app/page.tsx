@@ -42,6 +42,8 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchType, setSearchType] = useState<'links' | 'actress' | 'favorites'>('links');
   const [showSearchActressDropdown, setShowSearchActressDropdown] = useState(false);
+  const [showHeader, setShowHeader] = useState(true);
+  const [lastScrollY, setLastScrollY] = useState(0);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -69,6 +71,24 @@ export default function Home() {
       setFilteredActresses(actresses);
     }
   }, [actressInput, actresses]);
+
+  // Handle scroll direction for hiding/showing header (from Grid scroll)
+  const handleGridScroll = ({ scrollTop }: { scrollTop: number }) => {
+    // Show header when at top of grid
+    if (scrollTop < 10) {
+      setShowHeader(true);
+    }
+    // Hide header when scrolling down
+    else if (scrollTop > lastScrollY && scrollTop > 100) {
+      setShowHeader(false);
+    }
+    // Show header when scrolling up
+    else if (scrollTop < lastScrollY) {
+      setShowHeader(true);
+    }
+
+    setLastScrollY(scrollTop);
+  };
 
   // Filter actresses for search dropdown
   const searchFilteredActresses = actresses.filter((actress) =>
@@ -300,7 +320,9 @@ export default function Home() {
       <div className="max-w-6xl mx-auto">
         {/* Header with add link, website name, and logout */}
         {/* Header - Mobile Responsive */}
-        <div className="mb-8">
+        <div className={`transition-all duration-300 ease-in-out overflow-hidden ${
+          showHeader ? 'max-h-96 opacity-100 mb-4' : 'max-h-0 opacity-0 mb-0'
+        }`}>
           {/* Desktop Layout */}
           <div className="hidden md:flex justify-between items-center">
             {/* Add Link Button - Left Side */}
@@ -370,7 +392,9 @@ export default function Home() {
         </div>
 
         {/* Search Bar */}
-        <div className="mb-8">
+        <div className={`transition-all duration-300 ease-in-out overflow-hidden ${
+          showHeader ? 'max-h-96 opacity-100 mb-4' : 'max-h-0 opacity-0 mb-0'
+        }`}>
           <div className="flex gap-3">
             {/* Search Type Dropdown */}
             <select
@@ -631,7 +655,7 @@ export default function Home() {
               : `No links found matching "${searchQuery}"`}
           </div>
         ) : (
-          <div style={{ height: 'calc(100vh - 300px)', minHeight: '600px' }}>
+          <div className="transition-all duration-300 ease-in-out" style={{ height: 'calc(100vh - 120px)', minHeight: '400px' }}>
             <AutoSizer>
               {({ height, width }) => {
                 // Calculate columns based on width
@@ -753,6 +777,7 @@ export default function Home() {
                     rowHeight={rowHeight}
                     width={width}
                     overscanRowCount={2}
+                    onScroll={handleGridScroll}
                   />
                 );
               }}
