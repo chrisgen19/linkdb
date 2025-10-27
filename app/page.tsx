@@ -38,7 +38,7 @@ export default function Home() {
   const [showModal, setShowModal] = useState(false);
   const [editingLink, setEditingLink] = useState<Link | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchType, setSearchType] = useState<'links' | 'actress'>('links');
+  const [searchType, setSearchType] = useState<'links' | 'actress' | 'favorites'>('links');
   const [showSearchActressDropdown, setShowSearchActressDropdown] = useState(false);
 
   // Redirect to login if not authenticated
@@ -75,6 +75,12 @@ export default function Home() {
 
   // Filter links based on search
   const filteredLinks = links.filter((link) => {
+    // Handle favorites filter
+    if (searchType === 'favorites') {
+      return link.favorite;
+    }
+
+    // If no search query, show all
     if (!searchQuery.trim()) return true;
 
     const query = searchQuery.toLowerCase();
@@ -84,10 +90,12 @@ export default function Home() {
       const titleMatch = link.title?.toLowerCase().includes(query);
       const urlMatch = link.url.toLowerCase().includes(query);
       return titleMatch || urlMatch;
-    } else {
+    } else if (searchType === 'actress') {
       // Search by actress name
       return link.actress?.name.toLowerCase().includes(query);
     }
+
+    return true;
   });
 
   const fetchLinks = async () => {
@@ -332,11 +340,18 @@ export default function Home() {
             {/* Search Type Dropdown */}
             <select
               value={searchType}
-              onChange={(e) => setSearchType(e.target.value as 'links' | 'actress')}
+              onChange={(e) => {
+                const newType = e.target.value as 'links' | 'actress' | 'favorites';
+                setSearchType(newType);
+                if (newType === 'favorites') {
+                  setSearchQuery('');
+                }
+              }}
               className="px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="links">Search Links</option>
               <option value="actress">Search Actress</option>
+              <option value="favorites">Favorites</option>
             </select>
 
             {/* Search Input with Actress Dropdown */}
@@ -356,8 +371,15 @@ export default function Home() {
                   }
                 }}
                 onBlur={() => setTimeout(() => setShowSearchActressDropdown(false), 200)}
-                placeholder={searchType === 'links' ? 'Search by title or URL...' : 'Search by actress name...'}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder={
+                  searchType === 'favorites'
+                    ? 'Showing favorite links...'
+                    : searchType === 'links'
+                    ? 'Search by title or URL...'
+                    : 'Search by actress name...'
+                }
+                disabled={searchType === 'favorites'}
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               />
 
               {/* Actress Dropdown for Search */}
@@ -544,10 +566,18 @@ export default function Home() {
         )}
 
         {/* Search Results Count */}
-        {!fetchingLinks && links.length > 0 && searchQuery && (
-          <div className="mb-4 text-gray-600 dark:text-gray-400">
-            Found {filteredLinks.length} {filteredLinks.length === 1 ? 'result' : 'results'} for "{searchQuery}"
-          </div>
+        {!fetchingLinks && links.length > 0 && (
+          <>
+            {searchType === 'favorites' ? (
+              <div className="mb-4 text-gray-600 dark:text-gray-400">
+                Showing {filteredLinks.length} favorite {filteredLinks.length === 1 ? 'link' : 'links'}
+              </div>
+            ) : searchQuery ? (
+              <div className="mb-4 text-gray-600 dark:text-gray-400">
+                Found {filteredLinks.length} {filteredLinks.length === 1 ? 'result' : 'results'} for "{searchQuery}"
+              </div>
+            ) : null}
+          </>
         )}
 
         {/* Links Grid */}
@@ -561,7 +591,9 @@ export default function Home() {
           </div>
         ) : filteredLinks.length === 0 ? (
           <div className="text-center text-gray-600 dark:text-gray-400">
-            No links found matching "{searchQuery}"
+            {searchType === 'favorites'
+              ? 'No favorite links yet. Click the star icon on a link to add it to favorites!'
+              : `No links found matching "${searchQuery}"`}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
