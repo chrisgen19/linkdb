@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
 
 export async function POST(request: NextRequest) {
+  let url = '';
   try {
-    const { url } = await request.json();
+    const body = await request.json();
+    url = body.url;
 
     if (!url) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
