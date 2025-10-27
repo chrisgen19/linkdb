@@ -421,8 +421,8 @@ export default function Home() {
         </div>
 
         {/* Search Bar */}
-        <div className={`transition-all duration-300 ease-in-out overflow-hidden ${
-          showHeader ? 'max-h-96 opacity-100 mb-4' : 'max-h-0 opacity-0 mb-0'
+        <div className={`transition-all duration-300 ease-in-out ${
+          showHeader ? 'max-h-96 opacity-100 mb-4' : 'max-h-0 opacity-0 mb-0 overflow-hidden'
         }`}>
           <div className="flex gap-3">
             {/* Search Type Dropdown */}
@@ -474,7 +474,7 @@ export default function Home() {
 
               {/* Actress Dropdown for Search */}
               {searchType === 'actress' && showSearchActressDropdown && actresses.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-700 border-2 border-blue-500 dark:border-blue-400 rounded-lg shadow-2xl max-h-64 overflow-y-auto" style={{ top: '100%' }}>
                   {searchFilteredActresses.length > 0 ? (
                     searchFilteredActresses.map((actress) => (
                       <button
