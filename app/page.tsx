@@ -296,43 +296,76 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 py-12 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 py-4 md:py-12 px-4">
       <div className="max-w-6xl mx-auto">
         {/* Header with add link, website name, and logout */}
-        <div className="flex justify-between items-center mb-8">
-          {/* Add Link Button - Left Side */}
-          <div>
-            <button
-              onClick={() => setShowModal(true)}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors shadow-lg"
-            >
-              + Add Link
-            </button>
+        {/* Header - Mobile Responsive */}
+        <div className="mb-8">
+          {/* Desktop Layout */}
+          <div className="hidden md:flex justify-between items-center">
+            {/* Add Link Button - Left Side */}
+            <div>
+              <button
+                onClick={() => setShowModal(true)}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors shadow-lg"
+              >
+                + Add Link
+              </button>
+            </div>
+
+            {/* Website Name - Center */}
+            <div className="text-center flex-1">
+              <h1 className="text-5xl font-bold text-gray-900 dark:text-white mb-4">
+                LinkDB
+              </h1>
+              <p className="text-xl text-gray-600 dark:text-gray-300">
+                Save and organize your favorite links
+              </p>
+            </div>
+
+            {/* User Info and Logout - Right Side */}
+            <div className="flex items-center gap-4">
+              {session?.user?.email && (
+                <span className="text-gray-600 dark:text-gray-400 text-sm">
+                  {session.user.email}
+                </span>
+              )}
+              <button
+                onClick={() => signOut()}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm"
+              >
+                Logout
+              </button>
+            </div>
           </div>
 
-          {/* Website Name - Center */}
-          <div className="text-center flex-1">
-            <h1 className="text-5xl font-bold text-gray-900 dark:text-white mb-4">
-              LinkDB
-            </h1>
-            <p className="text-xl text-gray-600 dark:text-gray-300">
-              Save and organize your favorite links
-            </p>
-          </div>
+          {/* Mobile Layout */}
+          <div className="md:hidden">
+            {/* Website Name - Top */}
+            <div className="text-center mb-4">
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                LinkDB
+              </h1>
+              <p className="text-base text-gray-600 dark:text-gray-300">
+                Save and organize your favorite links
+              </p>
+            </div>
 
-          {/* User Info and Logout - Right Side */}
-          <div className="flex items-center gap-4">
-            {session?.user?.email && (
-              <span className="text-gray-600 dark:text-gray-400 text-sm">
-                {session.user.email}
-              </span>
-            )}
-            <button
-              onClick={() => signOut()}
-              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm"
-            >
-              Logout
-            </button>
+            {/* Add Link and Logout Buttons - Bottom Row */}
+            <div className="flex justify-between items-center gap-3">
+              <button
+                onClick={() => setShowModal(true)}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors shadow-lg"
+              >
+                + Add Link
+              </button>
+              <button
+                onClick={() => signOut()}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
 
