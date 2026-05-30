@@ -9,7 +9,7 @@ import {
   type GridCellRenderer,
 } from 'react-virtualized';
 import 'react-virtualized/styles.css';
-import { Plus, SearchX, Sparkles } from 'lucide-react';
+import { Plus, SearchX, Sparkles, Tag, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import type { Actress, ActressSummary, FilterType, Link } from '@/lib/types';
@@ -30,6 +30,10 @@ export default function Home() {
   const [fetching, setFetching] = useState(true);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
+  // Exact actress filter (by id) set when an actress card/badge is tapped.
+  // Kept separate from the free-text search so a name can't match unrelated
+  // links via substring (e.g. a short name appearing in other titles/tags).
+  const [selectedActress, setSelectedActress] = useState<Actress | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingLink, setEditingLink] = useState<Link | null>(null);
 
@@ -62,6 +66,7 @@ export default function Home() {
     const q = query.trim().toLowerCase();
     let result = links.filter((link) => {
       if (filter === 'favorites' && !link.favorite) return false;
+      if (selectedActress && link.actressId !== selectedActress.id) return false;
       if (!q) return true;
       return (
         link.title?.toLowerCase().includes(q) ||
@@ -73,7 +78,7 @@ export default function Home() {
       result = [...result].sort((a, b) => b.clickCount - a.clickCount);
     }
     return result;
-  }, [links, query, filter]);
+  }, [links, query, filter, selectedActress]);
 
   // Derive one card per actress from the loaded links. `links` arrives sorted
   // newest-first, so the first image we encounter for an actress is their most
@@ -180,10 +185,23 @@ export default function Home() {
     }
   }
 
-  function handleActressClick(name: string) {
+  function handleActressClick(actress: Actress) {
+    setSelectedActress(actress);
     setFilter('all');
-    setQuery(name);
+    setQuery('');
     gridRef.current?.scrollToPosition({ scrollLeft: 0, scrollTop: 0 });
+  }
+
+  // Changing a filter tab or typing a search clears the pinned actress so the
+  // two filtering modes never silently combine.
+  function handleFilterChange(value: FilterType) {
+    setSelectedActress(null);
+    setFilter(value);
+  }
+
+  function handleQueryChange(value: string) {
+    if (value) setSelectedActress(null);
+    setQuery(value);
   }
 
   if (status === 'loading' || status === 'unauthenticated') {
@@ -201,15 +219,32 @@ export default function Home() {
     <div className="flex h-[100dvh] flex-col bg-background bg-ambient">
       <AppHeader
         query={query}
-        onQueryChange={setQuery}
+        onQueryChange={handleQueryChange}
         filter={filter}
-        onFilterChange={setFilter}
+        onFilterChange={handleFilterChange}
         onAdd={openAddSheet}
         userEmail={session?.user?.email}
       />
 
       <main className="min-h-0 flex-1">
-        <div className="mx-auto h-full max-w-7xl px-2 pb-24 pt-3 md:px-5 md:pb-4">
+        <div className="mx-auto flex h-full max-w-7xl flex-col px-2 pb-24 pt-3 md:px-5 md:pb-4">
+          {selectedActress && !isActressView && !fetching && (
+            <div className="mb-3 flex items-center gap-2 px-1">
+              <span className="text-sm text-muted-foreground">Filtered by</span>
+              <button
+                type="button"
+                onClick={() => setSelectedActress(null)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 py-1 pl-3 pr-2 text-sm font-medium text-primary transition-colors hover:bg-primary/15"
+              >
+                <Tag className="size-3.5" />
+                {selectedActress.name}
+                <span className="grid size-4 place-items-center rounded-full bg-primary/20">
+                  <X className="size-3" />
+                </span>
+              </button>
+            </div>
+          )}
+          <div className="min-h-0 flex-1">
           {fetching ? (
             <LoadingGrid />
           ) : isActressView ? (
@@ -290,12 +325,13 @@ export default function Home() {
               }}
             </AutoSizer>
           )}
+          </div>
         </div>
       </main>
 
       <BottomBar
         filter={filter}
-        onFilterChange={setFilter}
+        onFilterChange={handleFilterChange}
         onAdd={openAddSheet}
       />
 

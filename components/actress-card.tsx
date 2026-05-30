@@ -10,7 +10,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 
 interface ActressCardProps {
   actress: ActressSummary;
-  onClick: (name: string) => void;
+  onClick: (actress: { id: string; name: string }) => void;
 }
 
 export function ActressCard({ actress, onClick }: ActressCardProps) {
@@ -48,7 +48,7 @@ export function ActressCard({ actress, onClick }: ActressCardProps) {
   return (
     <button
       type="button"
-      onClick={() => onClick(actress.name)}
+      onClick={() => onClick({ id: actress.id, name: actress.name })}
       className="group flex h-full w-full flex-col overflow-hidden rounded-2xl border bg-card text-left transition-all hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5"
     >
       {/* Cover — same proportions as the link cards */}
