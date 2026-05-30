@@ -9,18 +9,23 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 /**
- * Token-authenticated link save for the iOS share Shortcut. Accepts the URL in
- * a JSON body ({ "url": "…" }), a form field, or a ?url= query param.
+ * Token-authenticated link save for the iOS share Shortcut.
+ *
+ * Works over GET or POST so the Shortcut can be configured the simplest,
+ * least error-prone way (GET avoids the "Get Contents of URL" method/body
+ * pitfalls). The token comes from `Authorization: Bearer …`, `x-api-token`,
+ * or a `?token=` query param; the URL from `?url=` or a JSON/form body.
  */
-export async function POST(request: NextRequest) {
-  const userId = await userIdFromApiToken(tokenFromRequest(request));
+async function handleQuickAdd(request: NextRequest): Promise<NextResponse> {
+  const queryToken = request.nextUrl.searchParams.get('token') || '';
+  const userId = await userIdFromApiToken(tokenFromRequest(request) || queryToken);
   if (!userId) {
     return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
   }
 
-  // Pull the URL from JSON, form-encoded body, or the query string.
+  // URL from the query string, or (for POST) a JSON / form body.
   let url = request.nextUrl.searchParams.get('url') || '';
-  if (!url) {
+  if (!url && request.method !== 'GET') {
     const contentType = request.headers.get('content-type') || '';
     try {
       if (contentType.includes('application/json')) {
@@ -30,7 +35,7 @@ export async function POST(request: NextRequest) {
         url = String(form.get('url') || '');
       }
     } catch {
-      // Body was empty or unparseable — handled by the validation below.
+      // Body empty/unparseable — handled by the validation below.
     }
   }
 
@@ -72,4 +77,12 @@ export async function POST(request: NextRequest) {
   });
 
   return NextResponse.json({ ok: true, link }, { status: 201 });
+}
+
+export async function GET(request: NextRequest) {
+  return handleQuickAdd(request);
+}
+
+export async function POST(request: NextRequest) {
+  return handleQuickAdd(request);
 }
