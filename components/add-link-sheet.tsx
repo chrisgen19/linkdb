@@ -49,13 +49,14 @@ export function AddLinkSheet({
     ? "Update the favorite and actress tag for this link."
     : "Paste a URL — we'll fetch the title and cover automatically.";
 
-  const form = (
+  const form = (autoFocusUrl: boolean) => (
     <LinkForm
       editingLink={editingLink}
       actresses={actresses}
       onSaved={onSaved}
       onActressCreated={onActressCreated}
       onClose={() => onOpenChange(false)}
+      autoFocusUrl={autoFocusUrl}
     />
   );
 
@@ -67,21 +68,27 @@ export function AddLinkSheet({
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription>{description}</DialogDescription>
           </DialogHeader>
-          {form}
+          {form(!isEditing)}
         </DialogContent>
       </Dialog>
     );
   }
 
   return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="max-h-[92vh]">
-        <DrawerHeader className="pb-1">
+    // shouldScaleBackground off: the background-scale animation is glitchy
+    // without a vaul wrapper and can leave the content snapped off-screen.
+    <Drawer open={open} onOpenChange={onOpenChange} shouldScaleBackground={false}>
+      {/* flex column with a bounded height so the body scrolls and every
+          field stays reachable even with the on-screen keyboard up. */}
+      <DrawerContent className="flex max-h-[90svh] flex-col">
+        <DrawerHeader className="shrink-0 pb-1">
           <DrawerTitle>{title}</DrawerTitle>
           <DrawerDescription>{description}</DrawerDescription>
         </DrawerHeader>
-        <div className="overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-          {form}
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+          {/* Don't autofocus on mobile — popping the keyboard during the open
+              animation can leave the drawer mis-positioned. */}
+          {form(false)}
         </div>
       </DrawerContent>
     </Drawer>
@@ -94,6 +101,7 @@ interface LinkFormProps {
   onSaved: (link: Link, mode: "create" | "update") => void;
   onActressCreated: (actress: Actress) => void;
   onClose: () => void;
+  autoFocusUrl: boolean;
 }
 
 function LinkForm({
@@ -102,6 +110,7 @@ function LinkForm({
   onSaved,
   onActressCreated,
   onClose,
+  autoFocusUrl,
 }: LinkFormProps) {
   const isEditing = !!editingLink;
   const [url, setUrl] = React.useState("");
@@ -246,7 +255,7 @@ function LinkForm({
           disabled={loading || isEditing}
           readOnly={isEditing}
           className="h-12"
-          autoFocus={!isEditing}
+          autoFocus={autoFocusUrl}
         />
         {isEditing && (
           <p className="text-xs text-muted-foreground">
