@@ -4,6 +4,11 @@ import { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { AlertCircle, Loader2 } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -30,7 +35,7 @@ export default function LoginPage() {
         router.push('/');
         router.refresh();
       }
-    } catch (err) {
+    } catch {
       setError('An error occurred. Please try again.');
     } finally {
       setLoading(false);
@@ -38,84 +43,76 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center py-12 px-4">
-      <div className="max-w-md w-full">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-          <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-              LinkDB
-            </h1>
-            <p className="text-gray-600 dark:text-gray-300">
-              Sign in to your account
-            </p>
-          </div>
+    <div className="grid min-h-[100dvh] place-items-center bg-background bg-ambient px-4 py-12">
+      <div className="w-full max-w-sm">
+        <div className="mb-8 text-center">
+          <span className="mx-auto mb-4 grid size-12 place-items-center rounded-xl bg-primary text-primary-foreground">
+            <span className="font-display text-2xl leading-none">L</span>
+          </span>
+          <h1 className="font-display text-4xl tracking-tight">Welcome back</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Sign in to your link library
+          </p>
+        </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-              >
-                Email
-              </label>
-              <input
+        <div className="rounded-2xl border bg-card p-6 shadow-sm sm:p-7">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
                 id="email"
                 type="email"
+                inputMode="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 disabled={loading}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                placeholder="your@email.com"
+                placeholder="you@email.com"
+                className="h-12"
               />
             </div>
 
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
-              >
-                Password
-              </label>
-              <input
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 disabled={loading}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                 placeholder="Enter your password"
+                className="h-12"
               />
             </div>
 
             {error && (
-              <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-3">
-                <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
+              <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+                <AlertCircle className="size-4 shrink-0" />
+                {error}
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-lg transition-colors"
-            >
-              {loading ? 'Signing in...' : 'Sign In'}
-            </button>
+            <Button type="submit" size="lg" disabled={loading} className="w-full">
+              {loading ? (
+                <>
+                  <Loader2 className="animate-spin" /> Signing in…
+                </>
+              ) : (
+                'Sign in'
+              )}
+            </Button>
           </form>
-
-          <div className="mt-6 text-center">
-            <p className="text-gray-600 dark:text-gray-400">
-              Don&apos;t have an account?{' '}
-              <Link
-                href="/register"
-                className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
-              >
-                Sign up
-              </Link>
-            </p>
-          </div>
         </div>
+
+        <p className="mt-6 text-center text-sm text-muted-foreground">
+          Don&apos;t have an account?{' '}
+          <Link href="/register" className="font-medium text-primary hover:underline">
+            Sign up
+          </Link>
+        </p>
       </div>
     </div>
   );

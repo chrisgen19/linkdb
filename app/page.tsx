@@ -1,850 +1,232 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useSession, signOut } from 'next-auth/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
-import { Grid, AutoSizer } from 'react-virtualized';
+import {
+  AutoSizer,
+  Grid,
+  type GridCellRenderer,
+} from 'react-virtualized';
 import 'react-virtualized/styles.css';
-import { Star, Eye, Edit2, Trash2 } from 'lucide-react';
+import { Plus, SearchX, Sparkles } from 'lucide-react';
+import { toast } from 'sonner';
 
-interface Link {
-  id: string;
-  url: string;
-  title: string | null;
-  image: string | null;
-  favorite: boolean;
-  clickCount: number;
-  actressId: string | null;
-  actress: { id: string; name: string } | null;
-  createdAt: string;
-}
-
-interface Actress {
-  id: string;
-  name: string;
-}
+import type { Actress, FilterType, Link } from '@/lib/types';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { AppHeader } from '@/components/app-header';
+import { BottomBar } from '@/components/bottom-bar';
+import { LinkCard } from '@/components/link-card';
+import { AddLinkSheet } from '@/components/add-link-sheet';
 
 export default function Home() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [url, setUrl] = useState('');
-  const [favorite, setFavorite] = useState(false);
-  const [actressInput, setActressInput] = useState('');
-  const [selectedActress, setSelectedActress] = useState<Actress | null>(null);
-  const [actresses, setActresses] = useState<Actress[]>([]);
-  const [filteredActresses, setFilteredActresses] = useState<Actress[]>([]);
-  const [showActressDropdown, setShowActressDropdown] = useState(false);
-  const [links, setLinks] = useState<Link[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [fetchingLinks, setFetchingLinks] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [editingLink, setEditingLink] = useState<Link | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchType, setSearchType] = useState<'links' | 'actress' | 'favorites' | 'most-viewed'>('links');
-  const [showSearchActressDropdown, setShowSearchActressDropdown] = useState(false);
-  const [showHeader, setShowHeader] = useState(true);
-  const [lastScrollY, setLastScrollY] = useState(0);
 
-  // Redirect to login if not authenticated
+  const [links, setLinks] = useState<Link[]>([]);
+  const [actresses, setActresses] = useState<Actress[]>([]);
+  const [fetching, setFetching] = useState(true);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<FilterType>('all');
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [editingLink, setEditingLink] = useState<Link | null>(null);
+
+  const gridRef = useRef<Grid>(null);
+
   useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/login');
-    }
+    if (status === 'unauthenticated') router.push('/login');
   }, [status, router]);
 
-  // Fetch all links and actresses on mount
   useEffect(() => {
-    if (status === 'authenticated') {
-      fetchLinks();
-      fetchActresses();
-    }
+    if (status !== 'authenticated') return;
+    (async () => {
+      try {
+        const [linksRes, actressRes] = await Promise.all([
+          fetch('/api/links'),
+          fetch('/api/actresses'),
+        ]);
+        if (linksRes.ok) setLinks(await linksRes.json());
+        if (actressRes.ok) setActresses(await actressRes.json());
+      } catch (err) {
+        console.error('Failed to load data:', err);
+        toast.error('Could not load your links');
+      } finally {
+        setFetching(false);
+      }
+    })();
   }, [status]);
 
-  // Filter actresses based on input
-  useEffect(() => {
-    if (actressInput.trim()) {
-      const filtered = actresses.filter((actress) =>
-        actress.name.toLowerCase().includes(actressInput.toLowerCase())
+  const filteredLinks = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let result = links.filter((link) => {
+      if (filter === 'favorites' && !link.favorite) return false;
+      if (!q) return true;
+      return (
+        link.title?.toLowerCase().includes(q) ||
+        link.url.toLowerCase().includes(q) ||
+        link.actress?.name.toLowerCase().includes(q)
       );
-      setFilteredActresses(filtered);
-    } else {
-      setFilteredActresses(actresses);
+    });
+    if (filter === 'most-viewed') {
+      result = [...result].sort((a, b) => b.clickCount - a.clickCount);
     }
-  }, [actressInput, actresses]);
+    return result;
+  }, [links, query, filter]);
 
-  // Handle scroll direction for hiding/showing header (from Grid scroll)
-  const handleGridScroll = ({ scrollTop }: { scrollTop: number }) => {
-    // Show header when at top of grid
-    if (scrollTop < 10) {
-      setShowHeader(true);
-    }
-    // Hide header when scrolling down
-    else if (scrollTop > lastScrollY && scrollTop > 100) {
-      setShowHeader(false);
-    }
-    // Show header when scrolling up
-    else if (scrollTop < lastScrollY) {
-      setShowHeader(true);
-    }
-
-    setLastScrollY(scrollTop);
-  };
-
-  // Filter actresses for search dropdown
-  const searchFilteredActresses = searchType === 'actress'
-    ? actresses.filter((actress) =>
-        actress.name.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : [];
-
-  // Filter links based on search
-  let filteredLinks = links.filter((link) => {
-    // Handle favorites filter
-    if (searchType === 'favorites') {
-      return link.favorite;
-    }
-
-    // Handle most viewed filter
-    if (searchType === 'most-viewed') {
-      return true; // Show all links, will sort by clickCount below
-    }
-
-    // If no search query, show all
-    if (!searchQuery.trim()) return true;
-
-    const query = searchQuery.toLowerCase();
-
-    if (searchType === 'links') {
-      // Search by title or URL
-      const titleMatch = link.title?.toLowerCase().includes(query);
-      const urlMatch = link.url.toLowerCase().includes(query);
-      return titleMatch || urlMatch;
-    } else if (searchType === 'actress') {
-      // Search by actress name
-      return link.actress?.name.toLowerCase().includes(query);
-    }
-
-    return true;
-  });
-
-  // Sort by click count if most-viewed filter is selected
-  if (searchType === 'most-viewed') {
-    filteredLinks = [...filteredLinks].sort((a, b) => b.clickCount - a.clickCount);
+  function openAddSheet() {
+    setEditingLink(null);
+    setSheetOpen(true);
   }
 
-  const fetchLinks = async () => {
-    try {
-      const response = await fetch('/api/links');
-      if (response.ok) {
-        const data = await response.json();
-        setLinks(data);
-      }
-    } catch (err) {
-      console.error('Error fetching links:', err);
-    } finally {
-      setFetchingLinks(false);
-    }
-  };
-
-  const fetchActresses = async () => {
-    try {
-      const response = await fetch('/api/actresses');
-      if (response.ok) {
-        const data = await response.json();
-        setActresses(data);
-        setFilteredActresses(data);
-      }
-    } catch (err) {
-      console.error('Error fetching actresses:', err);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      // Create or get actress ID if actress input is provided
-      let actressId = selectedActress?.id || null;
-      if (actressInput.trim() && !selectedActress) {
-        const actressResponse = await fetch('/api/actresses', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ name: actressInput.trim() }),
-        });
-
-        if (actressResponse.ok) {
-          const actress = await actressResponse.json();
-          actressId = actress.id;
-          // Refresh actresses list
-          await fetchActresses();
-        }
-      }
-
-      if (editingLink) {
-        // Update existing link
-        const updateResponse = await fetch('/api/links', {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            id: editingLink.id,
-            favorite,
-            actressId,
-          }),
-        });
-
-        if (!updateResponse.ok) {
-          const errorData = await updateResponse.json();
-          throw new Error(errorData.error || 'Failed to update link');
-        }
-
-        const updatedLink = await updateResponse.json();
-        setLinks(links.map((link) => (link.id === updatedLink.id ? updatedLink : link)));
-      } else {
-        // Create new link
-        // First, try to fetch metadata.
-        let metadata: { url: string; title: string | null; image: string | null } = {
-          url,
-          title: null,
-          image: null,
-        };
-        let metadataResponse: Response | null = null;
-        try {
-          metadataResponse = await fetch('/api/metadata', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ url }),
-            // Generous bound (server caps the scrape itself) so the request
-            // can't hang forever while still allowing the slow browser path.
-            signal: AbortSignal.timeout(70_000),
-          });
-        } catch (metadataError) {
-          // Network error/timeout reaching our metadata route — keep URL-only.
-          console.error('Metadata fetch failed, saving URL only:', metadataError);
-        }
-
-        if (metadataResponse) {
-          if (metadataResponse.ok) {
-            metadata = await metadataResponse.json();
-          } else if (metadataResponse.status < 500) {
-            // 4xx = validation error (e.g. unsupported URL scheme); surface it
-            // instead of silently saving an unsupported link.
-            const errorData = await metadataResponse.json().catch(() => ({}));
-            throw new Error(errorData.error || 'Invalid URL');
-          }
-          // 5xx = scrape/block failure → fall back to saving the URL only.
-        }
-
-        // Then, save to database with favorite and actress
-        const saveResponse = await fetch('/api/links', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            ...metadata,
-            favorite,
-            actressId,
-          }),
-        });
-
-        if (!saveResponse.ok) {
-          const errorData = await saveResponse.json();
-          throw new Error(errorData.error || 'Failed to save link');
-        }
-
-        const newLink = await saveResponse.json();
-        setLinks([newLink, ...links]);
-      }
-
-      setUrl('');
-      setFavorite(false);
-      setActressInput('');
-      setSelectedActress(null);
-      setEditingLink(null);
-      setShowModal(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleToggleFavorite = async (id: string, currentFavorite: boolean) => {
-    try {
-      const response = await fetch('/api/links', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ id, favorite: !currentFavorite }),
-      });
-
-      if (response.ok) {
-        const updatedLink = await response.json();
-        setLinks(links.map((link) => (link.id === id ? updatedLink : link)));
-      }
-    } catch (err) {
-      console.error('Error updating favorite:', err);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      const response = await fetch(`/api/links?id=${id}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        setLinks(links.filter((link) => link.id !== id));
-      }
-    } catch (err) {
-      console.error('Error deleting link:', err);
-    }
-  };
-
-  const handleActressSelect = (actress: Actress) => {
-    setSelectedActress(actress);
-    setActressInput(actress.name);
-    setShowActressDropdown(false);
-  };
-
-  const handleEdit = (link: Link) => {
+  function handleEdit(link: Link) {
     setEditingLink(link);
-    setUrl(link.url);
-    setFavorite(link.favorite);
-    if (link.actress) {
-      setActressInput(link.actress.name);
-      setSelectedActress(link.actress);
-    } else {
-      setActressInput('');
-      setSelectedActress(null);
-    }
-    setShowModal(true);
-  };
+    setSheetOpen(true);
+  }
 
-  const handleLinkClick = async (linkId: string) => {
+  function handleSaved(link: Link, mode: 'create' | 'update') {
+    setLinks((prev) =>
+      mode === 'create'
+        ? [link, ...prev]
+        : prev.map((l) => (l.id === link.id ? link : l))
+    );
+  }
+
+  function handleActressCreated(actress: Actress) {
+    setActresses((prev) =>
+      prev.some((a) => a.id === actress.id) ? prev : [...prev, actress]
+    );
+  }
+
+  async function handleOpen(link: Link) {
+    window.open(link.url, '_blank', 'noopener,noreferrer');
     try {
-      const response = await fetch(`/api/links/${linkId}/click`, {
-        method: 'POST',
-      });
-
-      if (response.ok) {
-        const updatedLink = await response.json();
-        setLinks(links.map((link) => (link.id === linkId ? updatedLink : link)));
+      const res = await fetch(`/api/links/${link.id}/click`, { method: 'POST' });
+      if (res.ok) {
+        const updated = await res.json();
+        setLinks((prev) => prev.map((l) => (l.id === link.id ? updated : l)));
       }
-    } catch (err) {
-      console.error('Error tracking click:', err);
+    } catch {
+      // Click tracking is best-effort.
     }
-  };
+  }
 
-  // Show loading state while checking authentication
-  if (status === 'loading') {
+  async function handleToggleFavorite(link: Link) {
+    // Optimistic update.
+    setLinks((prev) =>
+      prev.map((l) => (l.id === link.id ? { ...l, favorite: !l.favorite } : l))
+    );
+    try {
+      const res = await fetch('/api/links', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: link.id, favorite: !link.favorite }),
+      });
+      if (!res.ok) throw new Error();
+      const updated = await res.json();
+      setLinks((prev) => prev.map((l) => (l.id === link.id ? updated : l)));
+    } catch {
+      // Revert on failure.
+      setLinks((prev) =>
+        prev.map((l) => (l.id === link.id ? { ...l, favorite: link.favorite } : l))
+      );
+      toast.error('Could not update favorite');
+    }
+  }
+
+  async function handleDelete(link: Link) {
+    const snapshot = links;
+    setLinks((prev) => prev.filter((l) => l.id !== link.id));
+    try {
+      const res = await fetch(`/api/links?id=${link.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      toast.success('Link deleted');
+    } catch {
+      setLinks(snapshot);
+      toast.error('Could not delete link');
+    }
+  }
+
+  function handleActressClick(name: string) {
+    setFilter('all');
+    setQuery(name);
+    gridRef.current?.scrollToPosition({ scrollLeft: 0, scrollTop: 0 });
+  }
+
+  function scrollToTop() {
+    gridRef.current?.scrollToPosition({ scrollLeft: 0, scrollTop: 0 });
+  }
+
+  if (status === 'loading' || status === 'unauthenticated') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
-        <div className="text-center text-gray-600 dark:text-gray-400">
-          Loading...
+      <div className="grid h-[100dvh] place-items-center bg-ambient">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Sparkles className="size-4 animate-pulse text-primary" />
+          Loading…
         </div>
       </div>
     );
   }
 
-  // Don't render content if not authenticated
-  if (status === 'unauthenticated') {
-    return null;
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 py-4 md:py-12 px-4">
-      <div className="max-w-6xl mx-auto">
-        {/* Header with add link, website name, and logout */}
-        {/* Header - Mobile Responsive */}
-        <div className={`transition-all duration-300 ease-in-out overflow-hidden ${
-          showHeader ? 'max-h-96 opacity-100 mb-4' : 'max-h-0 opacity-0 mb-0'
-        }`}>
-          {/* Desktop Layout */}
-          <div className="hidden md:flex justify-between items-center">
-            {/* Add Link Button - Left Side */}
-            <div>
-              <button
-                onClick={() => setShowModal(true)}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors shadow-lg"
-              >
-                + Add Link
-              </button>
-            </div>
+    <div className="flex h-[100dvh] flex-col bg-background bg-ambient">
+      <AppHeader
+        query={query}
+        onQueryChange={setQuery}
+        filter={filter}
+        onFilterChange={setFilter}
+        onAdd={openAddSheet}
+        userEmail={session?.user?.email}
+      />
 
-            {/* Website Name - Center */}
-            <div className="text-center flex-1">
-              <h1 className="text-5xl font-bold text-gray-900 dark:text-white mb-4">
-                LinkDB
-              </h1>
-              <p className="text-xl text-gray-600 dark:text-gray-300">
-                Save and organize your favorite links
-              </p>
-            </div>
-
-            {/* User Info and Logout - Right Side */}
-            <div className="flex items-center gap-4">
-              {session?.user?.email && (
-                <span className="text-gray-600 dark:text-gray-400 text-sm">
-                  {session.user.email}
-                </span>
-              )}
-              <button
-                onClick={() => signOut()}
-                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm"
-              >
-                Logout
-              </button>
-            </div>
-          </div>
-
-          {/* Mobile Layout */}
-          <div className="md:hidden">
-            {/* Website Name - Top */}
-            <div className="text-center mb-4">
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                LinkDB
-              </h1>
-              <p className="text-base text-gray-600 dark:text-gray-300">
-                Save and organize your favorite links
-              </p>
-            </div>
-
-            {/* Add Link and Logout Buttons - Bottom Row */}
-            <div className="flex justify-between items-center gap-3">
-              <button
-                onClick={() => setShowModal(true)}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors shadow-lg"
-              >
-                + Add Link
-              </button>
-              <button
-                onClick={() => signOut()}
-                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
-              >
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Search Bar */}
-        <div className={`transition-all duration-300 ease-in-out ${
-          showHeader ? 'max-h-96 opacity-100 mb-4' : 'max-h-0 opacity-0 mb-0 overflow-hidden'
-        }`}>
-          <div className="flex gap-3">
-            {/* Search Type Dropdown */}
-            <select
-              value={searchType}
-              onChange={(e) => {
-                const newType = e.target.value as 'links' | 'actress' | 'favorites' | 'most-viewed';
-                setSearchType(newType);
-                setSearchQuery(''); // Clear search when changing type
-                setShowSearchActressDropdown(false);
-              }}
-              className="px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="links">Search Links</option>
-              <option value="actress">Search Actress</option>
-              <option value="favorites">Favorites</option>
-              <option value="most-viewed">Most Viewed</option>
-            </select>
-
-            {/* Search Input with Actress Dropdown */}
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  if (searchType === 'actress') {
-                    setShowSearchActressDropdown(true);
-                  }
-                }}
-                onFocus={() => {
-                  if (searchType === 'actress') {
-                    setShowSearchActressDropdown(true);
-                  }
-                }}
-                onBlur={() => setTimeout(() => setShowSearchActressDropdown(false), 200)}
-                placeholder={
-                  searchType === 'favorites'
-                    ? 'Showing favorite links...'
-                    : searchType === 'most-viewed'
-                    ? 'Showing most viewed links...'
-                    : searchType === 'links'
-                    ? 'Search by title or URL...'
-                    : 'Search by actress name...'
-                }
-                disabled={searchType === 'favorites' || searchType === 'most-viewed'}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              />
-
-              {/* Actress Dropdown for Search */}
-              {searchType === 'actress' && showSearchActressDropdown && actresses.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-700 border-2 border-blue-500 dark:border-blue-400 rounded-lg shadow-2xl max-h-64 overflow-y-auto" style={{ top: '100%' }}>
-                  {searchFilteredActresses.length > 0 ? (
-                    searchFilteredActresses.map((actress) => (
-                      <button
-                        key={actress.id}
-                        type="button"
-                        onClick={() => {
-                          setSearchQuery(actress.name);
-                          setShowSearchActressDropdown(false);
-                        }}
-                        className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-600 last:border-b-0"
-                      >
-                        {actress.name}
-                      </button>
-                    ))
-                  ) : (
-                    <div className="px-4 py-2 text-gray-500 dark:text-gray-400 text-sm">
-                      No actresses match &quot;{searchQuery}&quot;
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Message when no actresses in database */}
-              {searchType === 'actress' && showSearchActressDropdown && actresses.length === 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg p-4">
-                  <div className="text-gray-500 dark:text-gray-400 text-sm">
-                    No actresses in database yet. Add a link with an actress tag first.
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Clear Search Button */}
-            {searchQuery && (
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setShowSearchActressDropdown(false);
-                }}
-                className="px-4 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-lg transition-colors"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Add Link Modal */}
-        {showModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              {/* Modal Header */}
-              <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {editingLink ? 'Edit Link' : 'Add New Link'}
-                </h2>
-                <button
-                  onClick={() => {
-                    setShowModal(false);
-                    setError('');
-                    setUrl('');
-                    setFavorite(false);
-                    setActressInput('');
-                    setSelectedActress(null);
-                    setEditingLink(null);
-                  }}
-                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
-                >
-                  ×
-                </button>
-              </div>
-
-              {/* Modal Body */}
-              <div className="p-6">
-                <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-                  {/* URL Input */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      URL <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="url"
-                      value={url}
-                      onChange={(e) => setUrl(e.target.value)}
-                      placeholder="https://example.com"
-                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                      required
-                      disabled={loading || !!editingLink}
-                      readOnly={!!editingLink}
-                    />
-                    {editingLink && (
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        URL cannot be changed when editing
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Favorite Toggle */}
-                  <div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={favorite}
-                        onChange={(e) => setFavorite(e.target.checked)}
-                        className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                        disabled={loading}
-                      />
-                      <span className="text-gray-700 dark:text-gray-300 font-medium">
-                        Mark as Favorite
-                      </span>
-                    </label>
-                  </div>
-
-                  {/* Actress Input */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Actress (optional)
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={actressInput}
-                        onChange={(e) => {
-                          setActressInput(e.target.value);
-                          setSelectedActress(null);
-                          setShowActressDropdown(true);
-                        }}
-                        onFocus={() => setShowActressDropdown(true)}
-                        onBlur={() => setTimeout(() => setShowActressDropdown(false), 200)}
-                        placeholder="Type to search or add new actress"
-                        className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                        disabled={loading}
-                      />
-                      {showActressDropdown && filteredActresses.length > 0 && actressInput && (
-                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                          {filteredActresses.map((actress) => (
-                            <button
-                              key={actress.id}
-                              type="button"
-                              onClick={() => handleActressSelect(actress)}
-                              className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-900 dark:text-white"
-                            >
-                              {actress.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Error Message */}
-                  {error && (
-                    <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg p-3">
-                      <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
-                    </div>
-                  )}
-
-                  {/* Modal Footer */}
-                  <div className="flex gap-3 pt-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowModal(false);
-                        setError('');
-                        setUrl('');
-                        setFavorite(false);
-                        setActressInput('');
-                        setSelectedActress(null);
-                        setEditingLink(null);
-                      }}
-                      disabled={loading}
-                      className="flex-1 px-6 py-3 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-semibold rounded-lg transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-lg transition-colors"
-                    >
-                      {loading ? (editingLink ? 'Updating...' : 'Saving...') : (editingLink ? 'Update Link' : 'Save Link')}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Search Results Count */}
-        {!fetchingLinks && links.length > 0 && (
-          <>
-            {searchType === 'favorites' ? (
-              <div className="mb-4 text-gray-600 dark:text-gray-400">
-                Showing {filteredLinks.length} favorite {filteredLinks.length === 1 ? 'link' : 'links'}
-              </div>
-            ) : searchQuery ? (
-              <div className="mb-4 text-gray-600 dark:text-gray-400">
-                Found {filteredLinks.length} {filteredLinks.length === 1 ? 'result' : 'results'} for &quot;{searchQuery}&quot;
-              </div>
-            ) : null}
-          </>
-        )}
-
-        {/* Links Grid */}
-        {fetchingLinks ? (
-          <div className="text-center text-gray-600 dark:text-gray-400">
-            Loading links...
-          </div>
-        ) : links.length === 0 ? (
-          <div className="text-center text-gray-600 dark:text-gray-400">
-            No links saved yet. Add your first link above!
-          </div>
-        ) : filteredLinks.length === 0 ? (
-          <div className="text-center text-gray-600 dark:text-gray-400">
-            {searchType === 'favorites'
-              ? 'No favorite links yet. Click the star icon on a link to add it to favorites!'
-              : `No links found matching "${searchQuery}"`}
-          </div>
-        ) : (
-          <div className="transition-all duration-300 ease-in-out grid-container">
+      <main className="min-h-0 flex-1">
+        <div className="mx-auto h-full max-w-7xl px-2 pb-24 pt-3 md:px-5 md:pb-4">
+          {fetching ? (
+            <LoadingGrid />
+          ) : filteredLinks.length === 0 ? (
+            <EmptyState
+              hasLinks={links.length > 0}
+              query={query}
+              filter={filter}
+              onAdd={openAddSheet}
+            />
+          ) : (
             <AutoSizer>
               {({ height, width }) => {
-                // Calculate columns based on width
-                const getColumnCount = () => {
-                  if (width >= 1024) return 3; // lg
-                  if (width >= 768) return 2;  // md
-                  return 1;                     // mobile
-                };
-
-                const columnCount = getColumnCount();
+                const columnCount =
+                  width >= 1280 ? 4 : width >= 1024 ? 3 : width >= 640 ? 2 : 1;
                 const columnWidth = width / columnCount;
-                const rowHeight = 420; // Fixed height for each card
+                const innerWidth = columnWidth - 16;
+                const rowHeight = Math.round(innerWidth * 0.625) + 168;
                 const rowCount = Math.ceil(filteredLinks.length / columnCount);
 
-                const cellRenderer = ({ columnIndex, rowIndex, key, style }: any) => {
+                const cellRenderer: GridCellRenderer = ({
+                  columnIndex,
+                  rowIndex,
+                  key,
+                  style,
+                }) => {
                   const index = rowIndex * columnCount + columnIndex;
                   if (index >= filteredLinks.length) return null;
-
                   const link = filteredLinks[index];
-
                   return (
-                    <div key={key} style={{
-                      ...style,
-                      padding: '12px',
-                    }}>
-                      <div
-                        className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition-shadow h-full"
-                      >
-                        {link.image && (
-                          <a
-                            href={link.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() => handleLinkClick(link.id)}
-                            className="relative h-48 bg-gray-200 dark:bg-gray-700 block"
-                          >
-                            <Image
-                              src={link.image}
-                              alt={link.title || 'Link preview'}
-                              fill
-                              className="object-cover hover:opacity-90 transition-opacity"
-                              unoptimized
-                              // Many image hosts use hotlink protection that 403s
-                              // requests carrying a foreign Referer. Sending none
-                              // lets the thumbnail load.
-                              referrerPolicy="no-referrer"
-                            />
-                          </a>
-                        )}
-                        <div className="p-4">
-                          <div className="flex items-start justify-between mb-2">
-                            <a
-                              href={link.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={() => handleLinkClick(link.id)}
-                              className="flex-1"
-                            >
-                              <h3 className="font-semibold text-lg text-gray-900 dark:text-white line-clamp-2 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-                                {link.title || 'Untitled'}
-                              </h3>
-                            </a>
-                            <button
-                              onClick={() => handleToggleFavorite(link.id, link.favorite)}
-                              className="ml-2 hover:scale-110 transition-transform"
-                              title={link.favorite ? 'Remove from favorites' : 'Add to favorites'}
-                            >
-                              <Star
-                                className={`w-5 h-5 ${link.favorite ? 'fill-yellow-400 text-yellow-400' : 'text-gray-400'}`}
-                              />
-                            </button>
-                          </div>
-                          <a
-                            href={link.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() => handleLinkClick(link.id)}
-                            className="text-blue-600 dark:text-blue-400 hover:underline text-sm block mb-2 truncate"
-                          >
-                            {link.url}
-                          </a>
-                          {link.actress && (
-                            <div className="mb-3">
-                              <button
-                                onClick={() => {
-                                  setSearchType('actress');
-                                  setSearchQuery(link.actress!.name);
-                                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                                }}
-                                className="inline-block px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-sm rounded-full hover:bg-purple-200 dark:hover:bg-purple-800 transition-colors cursor-pointer"
-                              >
-                                {link.actress.name}
-                              </button>
-                            </div>
-                          )}
-                          <div className="flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                              <span className="text-xs text-gray-500 dark:text-gray-400">
-                                {new Date(link.createdAt).toLocaleDateString()}
-                              </span>
-                              <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                                <Eye className="w-4 h-4" />
-                                {link.clickCount}
-                              </span>
-                            </div>
-                            <div className="flex gap-3">
-                              <button
-                                onClick={() => handleEdit(link)}
-                                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center gap-1"
-                                title="Edit"
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(link.id)}
-                                className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 flex items-center gap-1"
-                                title="Delete"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                    <div key={key} style={style} className="p-2">
+                      <LinkCard
+                        link={link}
+                        onOpen={handleOpen}
+                        onToggleFavorite={handleToggleFavorite}
+                        onEdit={handleEdit}
+                        onDelete={handleDelete}
+                        onActressClick={handleActressClick}
+                      />
                     </div>
                   );
                 };
 
                 return (
                   <Grid
+                    ref={gridRef}
+                    className="scrollbar-thin focus:outline-none"
                     cellRenderer={cellRenderer}
                     columnCount={columnCount}
                     columnWidth={columnWidth}
@@ -853,12 +235,84 @@ export default function Home() {
                     rowHeight={rowHeight}
                     width={width}
                     overscanRowCount={2}
-                    onScroll={handleGridScroll}
                   />
                 );
               }}
             </AutoSizer>
+          )}
+        </div>
+      </main>
+
+      <BottomBar
+        filter={filter}
+        onFilterChange={setFilter}
+        onAdd={openAddSheet}
+        onScrollTop={scrollToTop}
+      />
+
+      <AddLinkSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        editingLink={editingLink}
+        actresses={actresses}
+        onSaved={handleSaved}
+        onActressCreated={handleActressCreated}
+      />
+    </div>
+  );
+}
+
+function LoadingGrid() {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="overflow-hidden rounded-2xl border bg-card">
+          <Skeleton className="aspect-[16/10] w-full rounded-none" />
+          <div className="space-y-2 p-3.5">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-3 w-1/2" />
+            <Skeleton className="h-5 w-20 rounded-full" />
           </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({
+  hasLinks,
+  query,
+  filter,
+  onAdd,
+}: {
+  hasLinks: boolean;
+  query: string;
+  filter: FilterType;
+  onAdd: () => void;
+}) {
+  const isSearch = hasLinks && (!!query || filter !== 'all');
+  return (
+    <div className="grid h-full place-items-center px-6 text-center">
+      <div className="max-w-sm animate-fade-up">
+        <div className="mx-auto mb-5 grid size-16 place-items-center rounded-2xl bg-secondary">
+          {isSearch ? (
+            <SearchX className="size-7 text-muted-foreground" />
+          ) : (
+            <Sparkles className="size-7 text-primary" />
+          )}
+        </div>
+        <h2 className="font-display text-2xl">
+          {isSearch ? 'Nothing here' : 'Start your library'}
+        </h2>
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          {isSearch
+            ? 'No links match your search or filter. Try clearing it.'
+            : 'Save your first link — paste a URL and we’ll grab the title and cover automatically.'}
+        </p>
+        {!isSearch && (
+          <Button onClick={onAdd} size="lg" className="mt-6 rounded-full">
+            <Plus /> Add your first link
+          </Button>
         )}
       </div>
     </div>
