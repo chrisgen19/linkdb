@@ -25,7 +25,15 @@ export async function POST(request: NextRequest) {
     try {
       response = await fetch(url, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; LinkDB/1.0)',
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          Accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Upgrade-Insecure-Requests': '1',
         },
         redirect: 'follow',
       });
@@ -181,7 +189,8 @@ export async function POST(request: NextRequest) {
         const imgResponse = await fetch(imageUrl, {
           method: 'HEAD',
           headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; LinkDB/1.0)',
+            'User-Agent':
+              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           },
         });
 

@@ -209,21 +209,28 @@ export default function Home() {
         setLinks(links.map((link) => (link.id === updatedLink.id ? updatedLink : link)));
       } else {
         // Create new link
-        // First, fetch metadata
-        const metadataResponse = await fetch('/api/metadata', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ url }),
-        });
+        // First, try to fetch metadata. If the target site blocks scraping
+        // (e.g. 403) or times out, fall back to saving the URL only.
+        let metadata: { url: string; title: string | null; image: string | null } = {
+          url,
+          title: null,
+          image: null,
+        };
+        try {
+          const metadataResponse = await fetch('/api/metadata', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ url }),
+          });
 
-        if (!metadataResponse.ok) {
-          const errorData = await metadataResponse.json();
-          throw new Error(errorData.error || 'Failed to fetch metadata');
+          if (metadataResponse.ok) {
+            metadata = await metadataResponse.json();
+          }
+        } catch {
+          // Network error reaching our own metadata route — keep the fallback.
         }
-
-        const metadata = await metadataResponse.json();
 
         // Then, save to database with favorite and actress
         const saveResponse = await fetch('/api/links', {
