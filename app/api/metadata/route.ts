@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
-import { fetchPageHtml } from '@/lib/fetch-page';
+import { fetchPageHtml, assertUrlIsFetchable, BROWSER_UA } from '@/lib/fetch-page';
 
 // Playwright requires the Node.js runtime, and the headless-browser fallback
 // can take a while when solving anti-bot challenges.
@@ -118,12 +118,14 @@ export async function POST(request: NextRequest) {
     const isImageAccessible = async (imageUrl: string): Promise<boolean> => {
       try {
         console.log(`[Metadata] Checking image accessibility: ${imageUrl}`);
+        await assertUrlIsFetchable(imageUrl);
         const imgResponse = await fetch(imageUrl, {
           method: 'HEAD',
           headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'User-Agent': BROWSER_UA,
+            Accept: 'image/avif,image/webp,*/*;q=0.8',
           },
+          signal: AbortSignal.timeout(5_000),
         });
 
         console.log(`[Metadata] Image check response:`, {
