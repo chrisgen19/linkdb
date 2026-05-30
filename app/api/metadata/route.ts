@@ -41,19 +41,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[Metadata] Fetching metadata for: ${url}`);
-
     // Fetch the page HTML. Tries a plain fetch first and falls back to headless
     // Chromium when the site blocks bots or serves an anti-bot challenge.
     let html: string;
     try {
       html = await fetchPageHtml(url);
-      console.log(`[Metadata] ✅ Successfully fetched HTML (${html.length} characters)`);
     } catch (fetchError) {
-      console.error(`[Metadata] ❌ FETCH FAILED for: ${url}`, {
-        error: fetchError instanceof Error ? fetchError.message : 'Unknown error',
-        errorType: fetchError instanceof Error ? fetchError.constructor.name : typeof fetchError,
-      });
+      console.error(
+        `[Metadata] Fetch failed for ${url}:`,
+        fetchError instanceof Error ? fetchError.message : fetchError
+      );
       return NextResponse.json(
         { error: `Cannot fetch URL: ${fetchError instanceof Error ? fetchError.message : 'Network error'}` },
         { status: 502 }
@@ -63,16 +60,12 @@ export async function POST(request: NextRequest) {
     let $;
     try {
       $ = cheerio.load(html);
-      console.log(`[Metadata] ✅ Successfully parsed HTML with Cheerio`);
     } catch (cheerioError) {
-      console.error(`[Metadata] ❌ Failed to parse HTML with Cheerio:`, {
-        error: cheerioError instanceof Error ? cheerioError.message : 'Unknown error',
-        htmlPreview: html.substring(0, 200) + '...',
-      });
-      return NextResponse.json(
-        { error: 'Failed to parse HTML' },
-        { status: 500 }
+      console.error(
+        `[Metadata] Failed to parse HTML for ${url}:`,
+        cheerioError instanceof Error ? cheerioError.message : cheerioError
       );
+      return NextResponse.json({ error: 'Failed to parse HTML' }, { status: 500 });
     }
 
     // Extract title from multiple sources
@@ -84,49 +77,29 @@ export async function POST(request: NextRequest) {
     const h1Title = $('h1').first().text().trim() || '';
     const htmlTitle = $('title').text().trim() || '';
 
-    console.log(`[Metadata] Title extraction for ${url}:`, {
-      ogTitle,
-      twitterTitle,
-      schemaName,
-      metaTitle,
-      dcTitle,
-      h1Title: h1Title.substring(0, 50) + (h1Title.length > 50 ? '...' : ''),
-      htmlTitle,
-    });
-
-    let title = ogTitle || twitterTitle || schemaName || metaTitle || dcTitle || htmlTitle || h1Title || '';
+    const title =
+      ogTitle || twitterTitle || schemaName || metaTitle || dcTitle || htmlTitle || h1Title || '';
 
     // Helper function to make URLs absolute
     const makeAbsoluteUrl = (imageUrl: string, baseUrl: string): string => {
-      if (!imageUrl) {
-        console.warn(`[Metadata] makeAbsoluteUrl: Empty image URL provided`);
-        return imageUrl;
-      }
-
-      if (imageUrl.startsWith('http')) {
+      if (!imageUrl || imageUrl.startsWith('http')) {
         return imageUrl;
       }
 
       try {
         const urlObj = new URL(baseUrl);
-        let absoluteUrl = '';
-
         if (imageUrl.startsWith('//')) {
-          absoluteUrl = urlObj.protocol + imageUrl;
-        } else if (imageUrl.startsWith('/')) {
-          absoluteUrl = urlObj.origin + imageUrl;
-        } else {
-          absoluteUrl = urlObj.origin + '/' + imageUrl;
+          return urlObj.protocol + imageUrl;
         }
-
-        console.log(`[Metadata] Converted relative URL: ${imageUrl} → ${absoluteUrl}`);
-        return absoluteUrl;
+        if (imageUrl.startsWith('/')) {
+          return urlObj.origin + imageUrl;
+        }
+        return urlObj.origin + '/' + imageUrl;
       } catch (error) {
-        console.error(`[Metadata] Error converting URL to absolute:`, {
-          imageUrl,
-          baseUrl,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
+        console.error(
+          '[Metadata] Error converting URL to absolute:',
+          error instanceof Error ? error.message : error
+        );
         return imageUrl;
       }
     };
@@ -134,7 +107,6 @@ export async function POST(request: NextRequest) {
     // Helper function to check if image URL is accessible
     const isImageAccessible = async (imageUrl: string): Promise<boolean> => {
       try {
-        console.log(`[Metadata] Checking image accessibility: ${imageUrl}`);
         await assertUrlIsFetchable(imageUrl);
         const imgResponse = await fetch(imageUrl, {
           method: 'HEAD',
@@ -144,25 +116,12 @@ export async function POST(request: NextRequest) {
           },
           signal: AbortSignal.timeout(5_000),
         });
-
-        console.log(`[Metadata] Image check response:`, {
-          url: imageUrl,
-          status: imgResponse.status,
-          statusText: imgResponse.statusText,
-          contentType: imgResponse.headers.get('content-type'),
-          ok: imgResponse.ok,
-        });
-
-        if (!imgResponse.ok) {
-          console.warn(`[Metadata] Image not accessible - Status ${imgResponse.status}: ${imageUrl}`);
-        }
-
         return imgResponse.ok;
       } catch (error) {
-        console.error(`[Metadata] Error checking image accessibility: ${imageUrl}`, {
-          error: error instanceof Error ? error.message : 'Unknown error',
-          type: error instanceof Error ? error.constructor.name : typeof error,
-        });
+        console.error(
+          `[Metadata] Error checking image accessibility ${imageUrl}:`,
+          error instanceof Error ? error.message : error
+        );
         return false;
       }
     };
@@ -183,41 +142,27 @@ export async function POST(request: NextRequest) {
 
     // Helper function to find any image URL in the entire HTML content
     const findImageUrlInHtml = (): string => {
-      console.log(`[Metadata] Searching entire HTML for image file URLs (.jpg, .png, .gif, .webp)...`);
+      // Match http(s):// URLs ending with image extensions
+      const matches =
+        html.match(
+          /(https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg))(?:[?#][^\s"'<>]*)?/gi
+        ) || [];
 
-      // Search for common image extensions in the HTML
-      const imageUrlPatterns = [
-        // Match http(s):// URLs ending with image extensions
-        /(https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg))(?:[?#][^\s"'<>]*)?/gi,
-      ];
-
-      const foundUrls: string[] = [];
-
-      for (const pattern of imageUrlPatterns) {
-        const matches = html.match(pattern);
-        if (matches) {
-          foundUrls.push(...matches);
-        }
-      }
-
-      if (foundUrls.length > 0) {
+      if (matches.length > 0) {
         // Filter out common small/icon images
-        const filtered = foundUrls.filter(url => {
+        const filtered = matches.filter((url) => {
           const lowerUrl = url.toLowerCase();
-          return !lowerUrl.includes('icon') &&
-                 !lowerUrl.includes('logo') &&
-                 !lowerUrl.includes('avatar') &&
-                 !lowerUrl.includes('sprite') &&
-                 !lowerUrl.includes('1x1') &&
-                 !lowerUrl.includes('pixel');
+          return (
+            !lowerUrl.includes('icon') &&
+            !lowerUrl.includes('logo') &&
+            !lowerUrl.includes('avatar') &&
+            !lowerUrl.includes('sprite') &&
+            !lowerUrl.includes('1x1') &&
+            !lowerUrl.includes('pixel')
+          );
         });
-
-        const selectedUrl = filtered.length > 0 ? filtered[0] : foundUrls[0];
-        console.log(`[Metadata] Found ${foundUrls.length} image URLs in HTML, selected: ${selectedUrl}`);
-        return selectedUrl;
+        return filtered[0] ?? matches[0] ?? '';
       }
-
-      console.log(`[Metadata] No image URLs found in HTML content`);
       return '';
     };
 
@@ -227,125 +172,60 @@ export async function POST(request: NextRequest) {
     const twitterImage = $('meta[name="twitter:image"]').attr('content') || '';
     const twitterImageSrc = $('meta[name="twitter:image:src"]').attr('content') || '';
     const linkImage = $('link[rel="image_src"]').attr('href') || '';
-    const thumbnailUrl = $('meta[property="thumbnailUrl"]').attr('content') ||
-                         $('meta[name="thumbnailUrl"]').attr('content') ||
-                         $('meta[itemprop="thumbnailUrl"]').attr('content') || '';
+    const thumbnailUrl =
+      $('meta[property="thumbnailUrl"]').attr('content') ||
+      $('meta[name="thumbnailUrl"]').attr('content') ||
+      $('meta[itemprop="thumbnailUrl"]').attr('content') ||
+      '';
     const schemaImage = $('meta[itemprop="image"]').attr('content') || '';
     const msImage = $('meta[name="msapplication-TileImage"]').attr('content') || '';
 
-    console.log(`[Metadata] Image extraction for ${url}:`, {
-      ogImage,
-      ogImageSecure,
-      twitterImage,
-      twitterImageSrc,
-      linkImage,
-      thumbnailUrl,
-      schemaImage,
-      msImage,
-    });
+    let image =
+      ogImage ||
+      ogImageSecure ||
+      twitterImage ||
+      twitterImageSrc ||
+      linkImage ||
+      thumbnailUrl ||
+      schemaImage ||
+      msImage ||
+      '';
 
-    let image = ogImage || ogImageSecure || twitterImage || twitterImageSrc || linkImage || thumbnailUrl || schemaImage || msImage || '';
-
-    if (!image) {
-      console.warn(`[Metadata] No meta tag images found for ${url}. Will try CSS and <img> fallbacks.`);
-    }
-
-    // Make image URL absolute if found
     if (image) {
-      const originalImage = image;
+      // Make the meta-tag image absolute; if it isn't reachable, fall back to
+      // CSS backgrounds, the first <img>, then any image URL in the raw HTML.
       image = makeAbsoluteUrl(image, url);
-      console.log(`[Metadata] Found meta image: ${originalImage} → ${image}`);
 
-      // Check if the image is accessible, if not try alternatives
-      const isAccessible = await isImageAccessible(image);
-      if (!isAccessible) {
-        console.warn(`[Metadata] Image not accessible (404): ${image}, trying alternatives...`);
-
-        // Try to find image in inline styles
+      if (!(await isImageAccessible(image))) {
         const styleImage = extractImageFromStyles();
         if (styleImage) {
           image = makeAbsoluteUrl(styleImage, url);
-          console.log(`[Metadata] Found image in CSS styles: ${image}`);
         } else {
-          // Fall back to first img tag
           const firstImg = $('img').first().attr('src') || '';
-          if (firstImg) {
-            image = makeAbsoluteUrl(firstImg, url);
-            console.log(`[Metadata] Fallback to first <img> tag: ${image}`);
-          } else {
-            // Final fallback: search entire HTML for any image URLs
-            console.log(`[Metadata] No <img> tags, searching entire HTML content...`);
-            const htmlImageUrl = findImageUrlInHtml();
-            if (htmlImageUrl) {
-              image = htmlImageUrl;
-              console.log(`[Metadata] 🎯 Found image URL in HTML content: ${image}`);
-            } else {
-              image = '';
-              console.warn(`[Metadata] No fallback images found for: ${url}`);
-            }
-          }
+          image = firstImg ? makeAbsoluteUrl(firstImg, url) : findImageUrlInHtml();
         }
-      } else {
-        console.log(`[Metadata] Image is accessible: ${image}`);
       }
     } else {
-      console.log(`[Metadata] No meta tag images found, trying alternatives...`);
-
-      // No meta tag image found, try inline styles
-      console.log(`[Metadata] Attempting CSS background-image extraction...`);
+      // No meta-tag image — try CSS backgrounds, the first <img>, then raw HTML.
       const styleImage = extractImageFromStyles();
       if (styleImage) {
         image = makeAbsoluteUrl(styleImage, url);
-        console.log(`[Metadata] Found image in CSS styles: ${image}`);
       } else {
-        console.log(`[Metadata] No CSS background images found`);
-
-        // Fall back to first img tag
-        console.log(`[Metadata] Attempting to find first <img> tag...`);
         const firstImg = $('img').first().attr('src') || '';
-        const imgCount = $('img').length;
-        console.log(`[Metadata] Found ${imgCount} <img> tags on page`);
-
-        if (firstImg) {
-          image = makeAbsoluteUrl(firstImg, url);
-          console.log(`[Metadata] Found first <img> tag: ${image}`);
-        } else {
-          // Final fallback: search entire HTML for any image URLs
-          console.log(`[Metadata] No <img> tags found, searching entire HTML content...`);
-          const htmlImageUrl = findImageUrlInHtml();
-          if (htmlImageUrl) {
-            image = htmlImageUrl; // Already absolute URL from regex
-            console.log(`[Metadata] 🎯 Found image URL in HTML content: ${image}`);
-          } else {
-            console.warn(`[Metadata] ⚠️ NO IMAGES FOUND AT ALL for: ${url}`);
-            console.warn(`[Metadata] Summary - No images in: meta tags, CSS, <img> elements, or HTML content`);
-          }
-        }
+        image = firstImg ? makeAbsoluteUrl(firstImg, url) : findImageUrlInHtml();
       }
     }
 
-    const result = {
+    return NextResponse.json({
       url,
       title: title.trim(),
       image: image || null,
-    };
-
-    console.log(`[Metadata] Final result for ${url}:`, {
-      title: result.title,
-      hasImage: !!result.image,
-      imageUrl: result.image,
     });
-
-    return NextResponse.json(result);
   } catch (error) {
-    console.error(`[Metadata] Error fetching metadata for ${url}:`, error);
-    console.error('[Metadata] Error details:', {
-      message: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined,
-    });
-    return NextResponse.json(
-      { error: 'Failed to extract metadata' },
-      { status: 500 }
+    console.error(
+      `[Metadata] Error fetching metadata for ${url}:`,
+      error instanceof Error ? error.message : error
     );
+    return NextResponse.json({ error: 'Failed to extract metadata' }, { status: 500 });
   }
 }
