@@ -2,38 +2,113 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: 30 33% 99%;
+    --foreground: 24 10% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 24 10% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 24 10% 12%;
+
+    /* Ember / warm coral accent */
+    --primary: 13 88% 53%;
+    --primary-foreground: 30 40% 99%;
+
+    --secondary: 24 12% 95%;
+    --secondary-foreground: 24 10% 20%;
+
+    --muted: 24 12% 95%;
+    --muted-foreground: 24 6% 44%;
+
+    --accent: 24 14% 93%;
+    --accent-foreground: 24 10% 18%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 99%;
+
+    --border: 24 12% 89%;
+    --input: 24 12% 87%;
+    --ring: 13 88% 53%;
+
+    --radius: 0.85rem;
+  }
+
+  .dark {
+    --background: 24 9% 7%;
+    --foreground: 30 14% 92%;
+
+    --card: 24 8% 10%;
+    --card-foreground: 30 14% 92%;
+
+    --popover: 24 9% 9%;
+    --popover-foreground: 30 14% 92%;
+
+    /* Ember glows a touch brighter on dark */
+    --primary: 14 90% 58%;
+    --primary-foreground: 20 14% 8%;
+
+    --secondary: 24 6% 15%;
+    --secondary-foreground: 30 10% 88%;
+
+    --muted: 24 6% 14%;
+    --muted-foreground: 30 6% 60%;
+
+    --accent: 24 7% 17%;
+    --accent-foreground: 30 10% 90%;
+
+    --destructive: 0 70% 45%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 24 6% 17%;
+    --input: 24 6% 19%;
+    --ring: 14 90% 58%;
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+  /* Respect the iOS home indicator / notches for the bottom bar */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .h-safe-bottom {
+    height: env(safe-area-inset-bottom);
+  }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
-}
-
-/* Grid container height - full viewport on mobile, with space for header on desktop */
-.grid-container {
-  height: 100vh;
-  min-height: 400px;
-}
-
-@media (min-width: 768px) {
-  .grid-container {
-    height: calc(100vh - 120px);
+  /* Subtle grain + radial glow for atmosphere */
+  .bg-ambient {
+    background-image:
+      radial-gradient(60rem 60rem at 80% -10%, hsl(var(--primary) / 0.10), transparent 60%),
+      radial-gradient(50rem 50rem at -10% 10%, hsl(var(--primary) / 0.06), transparent 55%);
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 9999px;
   }
 }
