@@ -11,6 +11,12 @@ COPY package.json package-lock.json ./
 COPY prisma ./prisma
 RUN npm ci --include=dev
 
+# Insurance: ensure the exact Chromium build this Playwright version expects is
+# present at the path Playwright resolves at runtime. The base image ships it,
+# but this guarantees correctness if the cache path ever drifts. The base image
+# already provides the OS libraries, so --with-deps isn't needed here.
+RUN npx playwright install chromium
+
 # Copy the rest of the source and build.
 COPY . .
 RUN npm run build
