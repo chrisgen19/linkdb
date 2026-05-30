@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, LayoutGrid, Plus, Star, TrendingUp } from "lucide-react";
+import { LayoutGrid, Plus, Star, TrendingUp, Users } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { FilterType } from "@/lib/types";
@@ -9,7 +9,6 @@ interface BottomBarProps {
   filter: FilterType;
   onFilterChange: (value: FilterType) => void;
   onAdd: () => void;
-  onScrollTop: () => void;
 }
 
 const TABS: { value: FilterType; label: string; icon: typeof LayoutGrid }[] = [
@@ -18,14 +17,12 @@ const TABS: { value: FilterType; label: string; icon: typeof LayoutGrid }[] = [
 ];
 
 const RIGHT_TABS: { value: FilterType; label: string; icon: typeof LayoutGrid }[] =
-  [{ value: "most-viewed", label: "Top", icon: TrendingUp }];
+  [
+    { value: "most-viewed", label: "Top", icon: TrendingUp },
+    { value: "actresses", label: "Cast", icon: Users },
+  ];
 
-export function BottomBar({
-  filter,
-  onFilterChange,
-  onAdd,
-  onScrollTop,
-}: BottomBarProps) {
+export function BottomBar({ filter, onFilterChange, onAdd }: BottomBarProps) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/85 backdrop-blur-xl pb-safe md:hidden">
       <div className="relative mx-auto grid max-w-md grid-cols-5 items-center px-2">
@@ -60,13 +57,6 @@ export function BottomBar({
             onClick={() => onFilterChange(t.value)}
           />
         ))}
-
-        <TabButton
-          active={false}
-          label="Up"
-          icon={ArrowUp}
-          onClick={onScrollTop}
-        />
       </div>
     </nav>
   );

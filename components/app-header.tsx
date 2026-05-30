@@ -21,6 +21,7 @@ const FILTERS: { value: FilterType; label: string }[] = [
   { value: "all", label: "All" },
   { value: "favorites", label: "Favorites" },
   { value: "most-viewed", label: "Most viewed" },
+  { value: "actresses", label: "Actresses" },
 ];
 
 interface AppHeaderProps {

@@ -12,12 +12,13 @@ import 'react-virtualized/styles.css';
 import { Plus, SearchX, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 
-import type { Actress, FilterType, Link } from '@/lib/types';
+import type { Actress, ActressSummary, FilterType, Link } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppHeader } from '@/components/app-header';
 import { BottomBar } from '@/components/bottom-bar';
 import { LinkCard } from '@/components/link-card';
+import { ActressCard } from '@/components/actress-card';
 import { AddLinkSheet } from '@/components/add-link-sheet';
 
 export default function Home() {
@@ -73,6 +74,34 @@ export default function Home() {
     }
     return result;
   }, [links, query, filter]);
+
+  // Derive one card per actress from the loaded links. `links` arrives sorted
+  // newest-first, so the first image we encounter for an actress is their most
+  // recent one; older links backfill it only if that latest link had no image.
+  const actressSummaries = useMemo<ActressSummary[]>(() => {
+    const map = new Map<string, ActressSummary>();
+    for (const link of links) {
+      if (!link.actress) continue;
+      const existing = map.get(link.actress.id);
+      if (existing) {
+        existing.count++;
+        if (!existing.image && link.image) existing.image = link.image;
+      } else {
+        map.set(link.actress.id, {
+          id: link.actress.id,
+          name: link.actress.name,
+          image: link.image,
+          count: 1,
+        });
+      }
+    }
+    const q = query.trim().toLowerCase();
+    return Array.from(map.values())
+      .filter((a) => !q || a.name.toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [links, query]);
+
+  const isActressView = filter === 'actresses';
 
   function openAddSheet() {
     setEditingLink(null);
@@ -153,10 +182,6 @@ export default function Home() {
     gridRef.current?.scrollToPosition({ scrollLeft: 0, scrollTop: 0 });
   }
 
-  function scrollToTop() {
-    gridRef.current?.scrollToPosition({ scrollLeft: 0, scrollTop: 0 });
-  }
-
   if (status === 'loading' || status === 'unauthenticated') {
     return (
       <div className="grid h-[100dvh] place-items-center bg-ambient">
@@ -183,6 +208,27 @@ export default function Home() {
         <div className="mx-auto h-full max-w-7xl px-2 pb-24 pt-3 md:px-5 md:pb-4">
           {fetching ? (
             <LoadingGrid />
+          ) : isActressView ? (
+            actressSummaries.length === 0 ? (
+              <EmptyState
+                hasLinks={links.length > 0}
+                query={query}
+                filter={filter}
+                onAdd={openAddSheet}
+              />
+            ) : (
+              <div className="h-full overflow-y-auto scrollbar-thin pb-2">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
+                  {actressSummaries.map((actress) => (
+                    <ActressCard
+                      key={actress.id}
+                      actress={actress}
+                      onClick={handleActressClick}
+                    />
+                  ))}
+                </div>
+              </div>
+            )
           ) : filteredLinks.length === 0 ? (
             <EmptyState
               hasLinks={links.length > 0}
@@ -247,7 +293,6 @@ export default function Home() {
         filter={filter}
         onFilterChange={setFilter}
         onAdd={openAddSheet}
-        onScrollTop={scrollToTop}
       />
 
       <AddLinkSheet
@@ -290,26 +335,35 @@ function EmptyState({
   filter: FilterType;
   onAdd: () => void;
 }) {
+  const isActresses = filter === 'actresses';
   const isSearch = hasLinks && (!!query || filter !== 'all');
+
+  const heading = isActresses
+    ? 'No actresses'
+    : isSearch
+      ? 'Nothing here'
+      : 'Start your library';
+  const body = isActresses
+    ? query
+      ? 'No actresses match your search.'
+      : 'Tag links with an actress and they’ll show up here.'
+    : isSearch
+      ? 'No links match your search or filter. Try clearing it.'
+      : 'Save your first link — paste a URL and we’ll grab the title and cover automatically.';
+
   return (
     <div className="grid h-full place-items-center px-6 text-center">
       <div className="max-w-sm animate-fade-up">
         <div className="mx-auto mb-5 grid size-16 place-items-center rounded-2xl bg-secondary">
-          {isSearch ? (
+          {isSearch || isActresses ? (
             <SearchX className="size-7 text-muted-foreground" />
           ) : (
             <Sparkles className="size-7 text-primary" />
           )}
         </div>
-        <h2 className="font-display text-2xl">
-          {isSearch ? 'Nothing here' : 'Start your library'}
-        </h2>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          {isSearch
-            ? 'No links match your search or filter. Try clearing it.'
-            : 'Save your first link — paste a URL and we’ll grab the title and cover automatically.'}
-        </p>
-        {!isSearch && (
+        <h2 className="font-display text-2xl">{heading}</h2>
+        <p className="mt-1.5 text-sm text-muted-foreground">{body}</p>
+        {!isSearch && !isActresses && (
           <Button onClick={onAdd} size="lg" className="mt-6 rounded-full">
             <Plus /> Add your first link
           </Button>

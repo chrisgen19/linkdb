@@ -15,4 +15,13 @@ export interface Link {
   createdAt: string;
 }
 
-export type FilterType = "all" | "favorites" | "most-viewed";
+export type FilterType = "all" | "favorites" | "most-viewed" | "actresses";
+
+export interface ActressSummary {
+  id: string;
+  name: string;
+  /** Latest available thumbnail among this actress's links (may be null). */
+  image: string | null;
+  /** Number of links tagged with this actress. */
+  count: number;
+}
