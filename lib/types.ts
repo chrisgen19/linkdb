@@ -20,8 +20,8 @@ export type FilterType = "all" | "favorites" | "most-viewed" | "actresses";
 export interface ActressSummary {
   id: string;
   name: string;
-  /** Latest available thumbnail among this actress's links (may be null). */
-  image: string | null;
+  /** Distinct thumbnails from this actress's links, newest-first (may be empty). */
+  images: string[];
   /** Number of links tagged with this actress. */
   count: number;
 }

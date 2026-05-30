@@ -85,18 +85,22 @@ export default function Home() {
       const existing = map.get(link.actress.id);
       if (existing) {
         existing.count++;
-        if (!existing.image && link.image) existing.image = link.image;
+        if (link.image && !existing.images.includes(link.image)) {
+          existing.images.push(link.image);
+        }
       } else {
         map.set(link.actress.id, {
           id: link.actress.id,
           name: link.actress.name,
-          image: link.image,
+          images: link.image ? [link.image] : [],
           count: 1,
         });
       }
     }
     const q = query.trim().toLowerCase();
     return Array.from(map.values())
+      // Cap the crossfade set so multi-link actresses don't load dozens of images.
+      .map((a) => ({ ...a, images: a.images.slice(0, 5) }))
       .filter((a) => !q || a.name.toLowerCase().includes(q))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [links, query]);
