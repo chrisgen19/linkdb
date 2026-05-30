@@ -62,9 +62,16 @@ export function ActressCard({ actress, onClick }: ActressCardProps) {
               fill
               sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
               className={cn(
-                "object-cover transition-opacity duration-[2500ms] ease-in-out group-hover:scale-[1.04]",
+                "object-cover ease-in-out group-hover:scale-[1.04]",
                 i === active ? "opacity-100" : "opacity-0"
               )}
+              // Inline timing so the slow crossfade can't be overridden by
+              // Tailwind's default transition duration.
+              style={{
+                transitionProperty: "opacity",
+                transitionDuration: "2500ms",
+                zIndex: i === active ? 1 : 0,
+              }}
               unoptimized
               referrerPolicy="no-referrer"
               onError={() => handleError(src)}
@@ -78,7 +85,7 @@ export function ActressCard({ actress, onClick }: ActressCardProps) {
 
         {/* Slideshow dots (only when multiple images) */}
         {images.length > 1 && (
-          <div className="absolute right-2 top-2 flex gap-1">
+          <div className="absolute right-2 top-2 z-10 flex gap-1">
             {images.map((src, i) => (
               <span
                 key={src}
