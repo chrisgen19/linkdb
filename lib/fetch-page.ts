@@ -33,7 +33,12 @@ function looksLikeChallenge(html: string): boolean {
 async function fetchWithBrowser(url: string): Promise<string> {
   let browser: Browser | null = null;
   try {
-    browser = await chromium.launch({ headless: true });
+    // --no-sandbox is required when Chromium runs as root inside a container
+    // (e.g. the Playwright Docker image); it's harmless in local dev.
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
     const context = await browser.newContext({
       userAgent: BROWSER_UA,
       locale: 'en-US',
