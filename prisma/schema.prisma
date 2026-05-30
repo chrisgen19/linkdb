@@ -15,6 +15,10 @@ model User {
   email     String   @unique
   password  String
   name      String?
+  // Personal token for the iOS share-to-save Shortcut (quick-add endpoint).
+  // Not DB-unique (avoids a destructive db push on deploy); the 256-bit random
+  // value is collision-proof in practice and looked up via findFirst.
+  apiToken  String?
   links     Link[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -1,6 +1,7 @@
 "use client";
 
-import { LogOut, Plus, Search, X } from "lucide-react";
+import * as React from "react";
+import { LogOut, Plus, Search, Smartphone, X } from "lucide-react";
 import { signOut } from "next-auth/react";
 
 import { cn } from "@/lib/utils";
@@ -8,6 +9,7 @@ import type { FilterType } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { QuickAddDialog } from "@/components/quick-add-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,6 +44,7 @@ export function AppHeader({
   userEmail,
 }: AppHeaderProps) {
   const initial = (userEmail?.[0] ?? "U").toUpperCase();
+  const [tokenDialogOpen, setTokenDialogOpen] = React.useState(false);
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/70 bg-background/80 backdrop-blur-xl">
@@ -121,6 +124,10 @@ export function AppHeader({
                 <DropdownMenuSeparator />
               </>
             )}
+            <DropdownMenuItem onClick={() => setTokenDialogOpen(true)}>
+              <Smartphone /> Save from iPhone
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => signOut()}
               className="text-destructive focus:text-destructive"
@@ -130,6 +137,8 @@ export function AppHeader({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <QuickAddDialog open={tokenDialogOpen} onOpenChange={setTokenDialogOpen} />
     </header>
   );
 }
