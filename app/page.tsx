@@ -209,27 +209,39 @@ export default function Home() {
         setLinks(links.map((link) => (link.id === updatedLink.id ? updatedLink : link)));
       } else {
         // Create new link
-        // First, try to fetch metadata. If the target site blocks scraping
-        // (e.g. 403) or times out, fall back to saving the URL only.
+        // First, try to fetch metadata.
         let metadata: { url: string; title: string | null; image: string | null } = {
           url,
           title: null,
           image: null,
         };
+        let metadataResponse: Response | null = null;
         try {
-          const metadataResponse = await fetch('/api/metadata', {
+          metadataResponse = await fetch('/api/metadata', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({ url }),
+            // Generous bound (server caps the scrape itself) so the request
+            // can't hang forever while still allowing the slow browser path.
+            signal: AbortSignal.timeout(70_000),
           });
+        } catch (metadataError) {
+          // Network error/timeout reaching our metadata route — keep URL-only.
+          console.error('Metadata fetch failed, saving URL only:', metadataError);
+        }
 
+        if (metadataResponse) {
           if (metadataResponse.ok) {
             metadata = await metadataResponse.json();
+          } else if (metadataResponse.status < 500) {
+            // 4xx = validation error (e.g. unsupported URL scheme); surface it
+            // instead of silently saving an unsupported link.
+            const errorData = await metadataResponse.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Invalid URL');
           }
-        } catch {
-          // Network error reaching our own metadata route — keep the fallback.
+          // 5xx = scrape/block failure → fall back to saving the URL only.
         }
 
         // Then, save to database with favorite and actress

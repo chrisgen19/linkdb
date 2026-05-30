@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
 import * as cheerio from 'cheerio';
+import { authOptions } from '@/lib/auth';
 import { fetchPageHtml, assertUrlIsFetchable, BROWSER_UA } from '@/lib/fetch-page';
 
 // Playwright requires the Node.js runtime, and the headless-browser fallback
@@ -10,6 +12,13 @@ export const maxDuration = 60;
 export async function POST(request: NextRequest) {
   let url = '';
   try {
+    // Require auth: the headless-browser fallback is expensive, so gate it
+    // behind a session to avoid an unauthenticated CPU/memory DoS vector.
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     url = body.url;
 
@@ -17,11 +26,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    // Validate URL
+    // Validate URL and restrict to http(s) so unsupported schemes surface as a
+    // 400 to the client instead of being silently saved.
+    let parsedUrl: URL;
     try {
-      new URL(url);
+      parsedUrl = new URL(url);
     } catch {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
+    }
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      return NextResponse.json(
+        { error: 'Only http(s) URLs are supported' },
+        { status: 400 }
+      );
     }
 
     console.log(`[Metadata] Fetching metadata for: ${url}`);
