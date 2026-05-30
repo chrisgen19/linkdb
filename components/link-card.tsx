@@ -28,7 +28,7 @@ interface LinkCardProps {
   onToggleFavorite: (link: Link) => void;
   onEdit: (link: Link) => void;
   onDelete: (link: Link) => void;
-  onActressClick: (name: string) => void;
+  onActressClick: (actress: { id: string; name: string }) => void;
 }
 
 function domainOf(url: string): string {
@@ -122,7 +122,7 @@ export function LinkCard({
 
         {link.actress && (
           <div>
-            <button type="button" onClick={() => onActressClick(link.actress!.name)}>
+            <button type="button" onClick={() => onActressClick(link.actress!)}>
               <Badge
                 variant="secondary"
                 className="cursor-pointer font-normal hover:bg-secondary/70"
