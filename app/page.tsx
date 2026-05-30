@@ -745,6 +745,10 @@ export default function Home() {
                               fill
                               className="object-cover hover:opacity-90 transition-opacity"
                               unoptimized
+                              // Many image hosts use hotlink protection that 403s
+                              // requests carrying a foreign Referer. Sending none
+                              // lets the thumbnail load.
+                              referrerPolicy="no-referrer"
                             />
                           </a>
                         )}
