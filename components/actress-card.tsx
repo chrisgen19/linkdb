@@ -30,7 +30,8 @@ export function ActressCard({ actress, onClick }: ActressCardProps) {
   // A random interval per card keeps the grid from flipping in unison.
   React.useEffect(() => {
     if (images.length <= 1 || reduceMotion) return;
-    const period = 3200 + Math.random() * 2400;
+    // Let each image linger, then crossfade slowly into the next.
+    const period = 5000 + Math.random() * 2500;
     const timer = setInterval(() => {
       setIndex((i) => (i + 1) % images.length);
     }, period);
@@ -61,7 +62,7 @@ export function ActressCard({ actress, onClick }: ActressCardProps) {
               fill
               sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
               className={cn(
-                "object-cover transition-opacity duration-[1200ms] ease-in-out group-hover:scale-[1.04]",
+                "object-cover transition-opacity duration-[2500ms] ease-in-out group-hover:scale-[1.04]",
                 i === active ? "opacity-100" : "opacity-0"
               )}
               unoptimized
