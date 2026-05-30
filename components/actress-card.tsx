@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { User } from "lucide-react";
+import { Images, User } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { ActressSummary } from "@/lib/types";
@@ -48,55 +48,59 @@ export function ActressCard({ actress, onClick }: ActressCardProps) {
     <button
       type="button"
       onClick={() => onClick(actress.name)}
-      className="group relative block aspect-[3/4] w-full overflow-hidden rounded-2xl border bg-muted text-left transition-all hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5"
+      className="group flex h-full w-full flex-col overflow-hidden rounded-2xl border bg-card text-left transition-all hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5"
     >
-      {images.length > 0 ? (
-        images.map((src, i) => (
-          <Image
-            key={src}
-            src={src}
-            alt={actress.name}
-            fill
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 16vw"
-            className={cn(
-              "object-cover transition-opacity duration-[1200ms] ease-in-out group-hover:scale-[1.05]",
-              i === active ? "opacity-100" : "opacity-0"
-            )}
-            unoptimized
-            referrerPolicy="no-referrer"
-            onError={() => handleError(src)}
-          />
-        ))
-      ) : (
-        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted to-accent">
-          <User className="size-9 text-muted-foreground/40" />
-        </div>
-      )}
+      {/* Cover — same proportions as the link cards */}
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-muted">
+        {images.length > 0 ? (
+          images.map((src, i) => (
+            <Image
+              key={src}
+              src={src}
+              alt={actress.name}
+              fill
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+              className={cn(
+                "object-cover transition-opacity duration-[1200ms] ease-in-out group-hover:scale-[1.04]",
+                i === active ? "opacity-100" : "opacity-0"
+              )}
+              unoptimized
+              referrerPolicy="no-referrer"
+              onError={() => handleError(src)}
+            />
+          ))
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted to-accent">
+            <User className="size-8 text-muted-foreground/40" />
+          </div>
+        )}
 
-      {/* Gradient + label */}
-      <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 via-black/35 to-transparent p-3 pt-8">
-        <p className="line-clamp-2 text-sm font-medium leading-snug text-white">
+        {/* Slideshow dots (only when multiple images) */}
+        {images.length > 1 && (
+          <div className="absolute right-2 top-2 flex gap-1">
+            {images.map((src, i) => (
+              <span
+                key={src}
+                className={cn(
+                  "size-1.5 rounded-full transition-colors",
+                  i === active ? "bg-white" : "bg-white/40"
+                )}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Body */}
+      <div className="flex flex-1 flex-col gap-1 p-3.5">
+        <h3 className="line-clamp-1 font-medium leading-snug tracking-tight transition-colors group-hover:text-primary">
           {actress.name}
-        </p>
-        <p className="mt-0.5 text-[11px] text-white/70">
+        </h3>
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Images className="size-3.5" />
           {actress.count} {actress.count === 1 ? "link" : "links"}
         </p>
       </div>
-
-      {/* Slideshow dots (only when multiple images) */}
-      {images.length > 1 && (
-        <div className="absolute right-2 top-2 z-10 flex gap-1">
-          {images.map((src, i) => (
-            <span
-              key={src}
-              className={cn(
-                "size-1.5 rounded-full transition-colors",
-                i === active ? "bg-white" : "bg-white/40"
-              )}
-            />
-          ))}
-        </div>
-      )}
     </button>
   );
 }

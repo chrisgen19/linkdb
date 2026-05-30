@@ -222,7 +222,7 @@ export default function Home() {
               />
             ) : (
               <div className="h-full overflow-y-auto scrollbar-thin pb-2">
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                   {actressSummaries.map((actress) => (
                     <ActressCard
                       key={actress.id}
