@@ -63,19 +63,7 @@ function isBlockedIp(ip: string): boolean {
  * URL. Note: this checks the initial host only — redirects are still followed,
  * so a determined redirect to an internal address remains a residual risk.
  */
-export async function assertUrlIsFetchable(rawUrl: string): Promise<void> {
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    throw new Error('Invalid URL');
-  }
-
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error('Only http(s) URLs are allowed');
-  }
-
-  const { hostname } = parsed;
+async function assertHostAllowed(hostname: string): Promise<void> {
   if (net.isIP(hostname)) {
     if (isBlockedIp(hostname)) throw new Error('URL resolves to a blocked address');
     return;
@@ -88,6 +76,21 @@ export async function assertUrlIsFetchable(rawUrl: string): Promise<void> {
       throw new Error('URL resolves to a blocked address');
     }
   }
+}
+
+export async function assertUrlIsFetchable(rawUrl: string): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error('Invalid URL');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Only http(s) URLs are allowed');
+  }
+
+  await assertHostAllowed(parsed.hostname);
 }
 
 /**
@@ -120,7 +123,53 @@ async function fetchWithBrowser(url: string): Promise<string> {
       locale: 'en-US',
       viewport: { width: 1280, height: 800 },
     });
+
+    // SSRF guard for the browser: validate every request (initial navigation,
+    // redirects, and page subresources) and abort any that resolves to a
+    // blocked address, so attacker-controlled JS can't reach internal hosts.
+    const hostAllowed = new Map<string, Promise<boolean>>();
+    await context.route('**/*', async (route) => {
+      let host = '';
+      let protocol = '';
+      try {
+        const u = new URL(route.request().url());
+        host = u.hostname;
+        protocol = u.protocol;
+      } catch {
+        await route.abort('blockedbyclient');
+        return;
+      }
+      // Non-network schemes (data:, blob:, about:) carry no SSRF risk.
+      if (protocol !== 'http:' && protocol !== 'https:') {
+        await route.continue();
+        return;
+      }
+      let check = hostAllowed.get(host);
+      if (!check) {
+        check = assertHostAllowed(host).then(
+          () => true,
+          () => false
+        );
+        hostAllowed.set(host, check);
+      }
+      if (await check) {
+        await route.continue();
+      } else {
+        await route.abort('blockedbyclient');
+      }
+    });
+
     const page = await context.newPage();
+
+    // Track the final main-frame navigation status so dead URLs (404/500) with
+    // custom error pages aren't parsed as if they were the real content.
+    let lastNavStatus = 0;
+    page.on('response', (resp) => {
+      const req = resp.request();
+      if (req.isNavigationRequest() && req.frame() === page.mainFrame()) {
+        lastNavStatus = resp.status();
+      }
+    });
 
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
     // Give a Cloudflare challenge time to solve and redirect to real content.
@@ -131,6 +180,12 @@ async function fetchWithBrowser(url: string): Promise<string> {
       // Challenge still up — wait a bit longer for the auto-redirect.
       await page.waitForTimeout(6000);
       html = await page.content();
+    }
+
+    // A resolved Cloudflare challenge ends on a 2xx; a genuine 404/500 stays an
+    // error, so treat it as a failed fetch (caller falls back to URL-only).
+    if (lastNavStatus >= 400) {
+      throw new Error(`Page returned HTTP ${lastNavStatus}`);
     }
     return html;
   } finally {
@@ -156,9 +211,17 @@ export async function fetchPageHtml(url: string): Promise<string> {
       if (!looksLikeChallenge(html)) {
         return html;
       }
+    } else if (res.status === 404 || res.status === 410) {
+      // Definitively dead — don't waste a browser launch; let the caller
+      // fall back to URL-only instead of scraping a custom error page.
+      throw new Error(`Page returned HTTP ${res.status}`);
     }
-  } catch {
-    // Network-level failure — fall through to the browser path.
+  } catch (err) {
+    // Re-throw a confirmed dead-link status; otherwise the fetch failed at the
+    // network level (blocked, timed out) and the browser path may still work.
+    if (err instanceof Error && err.message.startsWith('Page returned HTTP')) {
+      throw err;
+    }
   }
 
   return fetchWithBrowser(url);
