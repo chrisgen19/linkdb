@@ -14,9 +14,20 @@ export async function getOrCreateApiToken(userId: string): Promise<string> {
   });
   if (user?.apiToken) return user.apiToken;
 
-  const token = generateApiToken();
-  await prisma.user.update({ where: { id: userId }, data: { apiToken: token } });
-  return token;
+  // Only set the token if it's still null, so two concurrent first-time
+  // requests can't overwrite each other (the loser would return a dead token).
+  await prisma.user.updateMany({
+    where: { id: userId, apiToken: null },
+    data: { apiToken: generateApiToken() },
+  });
+
+  // Return whatever actually got stored (ours, or a concurrent writer's).
+  const fresh = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { apiToken: true },
+  });
+  if (!fresh?.apiToken) throw new Error('Failed to create API token');
+  return fresh.apiToken;
 }
 
 /** Rotates the user's token (old one stops working immediately). */
