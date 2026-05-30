@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import Image from "next/image";
 import {
   Eye,
@@ -47,6 +48,13 @@ export function LinkCard({
   onActressClick,
 }: LinkCardProps) {
   const domain = domainOf(link.url);
+  const [imageFailed, setImageFailed] = React.useState(false);
+  const showImage = !!link.image && !imageFailed;
+
+  // Reset the failed flag if the image URL changes (e.g. after a refresh).
+  React.useEffect(() => {
+    setImageFailed(false);
+  }, [link.image]);
 
   return (
     <div className="group relative flex h-full flex-col overflow-hidden rounded-2xl border bg-card transition-all hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5">
@@ -57,19 +65,23 @@ export function LinkCard({
         className="relative block aspect-[16/10] w-full overflow-hidden bg-muted"
         aria-label={`Open ${link.title || domain}`}
       >
-        {link.image ? (
+        {showImage ? (
           <Image
-            src={link.image}
+            src={link.image!}
             alt={link.title || "Link preview"}
             fill
             sizes="(max-width: 768px) 100vw, 33vw"
             className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
             unoptimized
             referrerPolicy="no-referrer"
+            onError={() => setImageFailed(true)}
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted to-accent">
-            <Link2 className="size-8 text-muted-foreground/50" />
+          <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 bg-gradient-to-br from-muted to-accent">
+            <Link2 className="size-7 text-muted-foreground/50" />
+            <span className="px-3 text-center text-xs text-muted-foreground/70">
+              {domain}
+            </span>
           </div>
         )}
         <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/55 to-transparent" />

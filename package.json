@@ -11,6 +11,7 @@
     "build": "next build",
     "start": "prisma db push && next start",
     "lint": "next lint",
+    "refresh-images": "node scripts/refresh-images.mjs",
     "postinstall": "prisma generate",
     "vercel-build": "prisma db push --accept-data-loss && next build"
   },
