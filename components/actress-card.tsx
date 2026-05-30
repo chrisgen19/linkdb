@@ -39,7 +39,9 @@ export function ActressCard({ actress, onClick }: ActressCardProps) {
   }, [images.length, reduceMotion]);
 
   const handleError = (src: string) => {
-    setImages((prev) => (prev.length > 1 ? prev.filter((s) => s !== src) : prev));
+    // Always drop the failed URL — even the last one — so a broken final
+    // thumbnail falls back to the placeholder instead of showing as broken.
+    setImages((prev) => prev.filter((s) => s !== src));
     setIndex(0);
   };
 
