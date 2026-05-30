@@ -1,9 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
 import * as cheerio from 'cheerio';
+import { authOptions } from '@/lib/auth';
+import { fetchPageHtml, assertUrlIsFetchable, BROWSER_UA } from '@/lib/fetch-page';
+
+// Playwright requires the Node.js runtime, and the headless-browser fallback
+// can take a while when solving anti-bot challenges.
+export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   let url = '';
   try {
+    // Require auth: the headless-browser fallback is expensive, so gate it
+    // behind a session to avoid an unauthenticated CPU/memory DoS vector.
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     url = body.url;
 
@@ -11,95 +26,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    // Validate URL
+    // Validate URL and restrict to http(s) so unsupported schemes surface as a
+    // 400 to the client instead of being silently saved.
+    let parsedUrl: URL;
     try {
-      new URL(url);
+      parsedUrl = new URL(url);
     } catch {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
+    }
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      return NextResponse.json(
+        { error: 'Only http(s) URLs are supported' },
+        { status: 400 }
+      );
     }
 
     console.log(`[Metadata] Fetching metadata for: ${url}`);
 
-    // Fetch the URL
-    let response;
+    // Fetch the page HTML. Tries a plain fetch first and falls back to headless
+    // Chromium when the site blocks bots or serves an anti-bot challenge.
+    let html: string;
     try {
-      response = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; LinkDB/1.0)',
-        },
-        redirect: 'follow',
-      });
+      html = await fetchPageHtml(url);
+      console.log(`[Metadata] ✅ Successfully fetched HTML (${html.length} characters)`);
     } catch (fetchError) {
       console.error(`[Metadata] ❌ FETCH FAILED for: ${url}`, {
         error: fetchError instanceof Error ? fetchError.message : 'Unknown error',
         errorType: fetchError instanceof Error ? fetchError.constructor.name : typeof fetchError,
-        possibleCauses: [
-          'Network error / Timeout',
-          'DNS resolution failed',
-          'SSL/TLS certificate error',
-          'CORS blocking request',
-          'Invalid URL format',
-        ],
       });
       return NextResponse.json(
         { error: `Cannot fetch URL: ${fetchError instanceof Error ? fetchError.message : 'Network error'}` },
-        { status: 500 }
-      );
-    }
-
-    console.log(`[Metadata] Response received:`, {
-      url,
-      status: response.status,
-      statusText: response.statusText,
-      contentType: response.headers.get('content-type'),
-      contentLength: response.headers.get('content-length'),
-      redirected: response.redirected,
-      finalUrl: response.url,
-    });
-
-    if (!response.ok) {
-      const errorDetails = {
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-      };
-
-      console.error(`[Metadata] ❌ HTTP ERROR: ${response.status} ${response.statusText}`, errorDetails);
-
-      // Provide specific error messages based on status code
-      if (response.status === 403) {
-        console.error(`[Metadata] 403 Forbidden - Server blocked the request. Possible causes: Bot detection, IP blocking, or authentication required`);
-      } else if (response.status === 404) {
-        console.error(`[Metadata] 404 Not Found - URL does not exist`);
-      } else if (response.status === 429) {
-        console.error(`[Metadata] 429 Too Many Requests - Rate limited by server`);
-      } else if (response.status >= 500) {
-        console.error(`[Metadata] ${response.status} Server Error - The website's server is having issues`);
-      }
-
-      return NextResponse.json(
-        { error: `Failed to fetch URL: ${response.status} ${response.statusText}` },
-        { status: response.status }
-      );
-    }
-
-    const contentType = response.headers.get('content-type') || '';
-    if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
-      console.warn(`[Metadata] ⚠️ WARNING: Content-Type is not HTML: ${contentType}. May not extract metadata properly.`);
-    }
-
-    let html;
-    try {
-      html = await response.text();
-      console.log(`[Metadata] ✅ Successfully fetched HTML (${html.length} characters)`);
-    } catch (parseError) {
-      console.error(`[Metadata] ❌ Failed to parse response body:`, {
-        error: parseError instanceof Error ? parseError.message : 'Unknown error',
-      });
-      return NextResponse.json(
-        { error: 'Failed to read response body' },
-        { status: 500 }
+        { status: 502 }
       );
     }
 
@@ -178,11 +135,14 @@ export async function POST(request: NextRequest) {
     const isImageAccessible = async (imageUrl: string): Promise<boolean> => {
       try {
         console.log(`[Metadata] Checking image accessibility: ${imageUrl}`);
+        await assertUrlIsFetchable(imageUrl);
         const imgResponse = await fetch(imageUrl, {
           method: 'HEAD',
           headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; LinkDB/1.0)',
+            'User-Agent': BROWSER_UA,
+            Accept: 'image/avif,image/webp,*/*;q=0.8',
           },
+          signal: AbortSignal.timeout(5_000),
         });
 
         console.log(`[Metadata] Image check response:`, {
