@@ -17,10 +17,9 @@
 -- ---------------------------------------------------------------------------
 DO $$
 DECLARE
-    src_pairs   integer;
-    join_pairs  integer;
-    bak_pairs   integer;
-    bak_present integer;
+    src_pairs    integer;
+    join_pairs   integer;
+    missing_live integer;
 BEGIN
     -- Serialize concurrent runs (e.g. two replicas starting at once): the rest
     -- block here until the first transaction commits, then fall through as a
@@ -83,18 +82,23 @@ BEGIN
         WHERE table_schema = current_schema()
           AND table_name = '_actress_migration_backup'
     ) THEN
-        SELECT count(*) INTO bak_pairs FROM "_actress_migration_backup";
-        SELECT count(*) INTO bak_present
+        -- Only block on backup rows whose link AND actress STILL EXIST but are
+        -- missing from the join table — that would be a genuine migration gap.
+        -- Rows whose source link/actress were since deleted are stale snapshots
+        -- (their join row was removed by ON DELETE CASCADE) and safe to discard.
+        SELECT count(*) INTO missing_live
         FROM "_actress_migration_backup" b
-        JOIN "_ActressToLink" j ON j."A" = b.actress_id AND j."B" = b.link_id;
+        JOIN "Link" l    ON l.id = b.link_id
+        JOIN "Actress" a ON a.id = b.actress_id
+        LEFT JOIN "_ActressToLink" j ON j."A" = b.actress_id AND j."B" = b.link_id
+        WHERE j."A" IS NULL;
 
-        IF bak_pairs <> bak_present THEN
-            RAISE EXCEPTION 'refusing to drop _actress_migration_backup: % rows but only % present in join table',
-                bak_pairs, bak_present;
+        IF missing_live > 0 THEN
+            RAISE EXCEPTION 'refusing to drop _actress_migration_backup: % live association(s) missing from join table',
+                missing_live;
         END IF;
 
         EXECUTE 'DROP TABLE "_actress_migration_backup"';
-        RAISE NOTICE 'actresses cutover: removed legacy _actress_migration_backup (% rows verified).',
-            bak_pairs;
+        RAISE NOTICE 'actresses cutover: removed legacy _actress_migration_backup.';
     END IF;
 END $$;
