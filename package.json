@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "db:cutover": "tsx scripts/cutover-actresses.ts",
+    "db:cutover": "node scripts/cutover-actresses.mjs",
     "start": "npm run db:cutover && prisma db push && next start",
     "lint": "next lint",
     "refresh-images": "node scripts/refresh-images.mjs",
