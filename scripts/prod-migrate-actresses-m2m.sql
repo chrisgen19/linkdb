@@ -16,6 +16,11 @@ DECLARE
     backed_up integer;
     migrated  integer;
 BEGIN
+    -- Serialize concurrent runs (e.g. two replicas starting at once): the rest
+    -- block here until the first transaction commits, then fall through the
+    -- guard below as a clean no-op instead of racing the destructive DROP.
+    PERFORM pg_advisory_xact_lock(4019283746501);
+
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = current_schema()
