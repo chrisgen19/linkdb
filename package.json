@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "prisma db push && next start",
+    "db:cutover": "tsx scripts/cutover-actresses.ts",
+    "start": "npm run db:cutover && prisma db push && next start",
     "lint": "next lint",
     "refresh-images": "node scripts/refresh-images.mjs",
     "postinstall": "prisma generate",

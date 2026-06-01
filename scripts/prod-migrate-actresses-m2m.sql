@@ -1,62 +1,69 @@
 -- ---------------------------------------------------------------------------
--- Production migration: Link.actressId (1:N)  ->  Link.actresses[] (M:N)
+-- Idempotent cutover: Link.actressId (1:N)  ->  Link.actresses[] (M:N)
 --
--- Moves every existing link->actress association into the implicit Prisma
--- join table `_ActressToLink`, then drops the old `actressId` column. The
--- whole thing runs in ONE transaction: if any step fails, nothing changes.
+-- Safe to run on EVERY deploy. A single guarded DO block that:
+--   * does nothing if `Link.actressId` is absent (fresh DB or already migrated);
+--   * otherwise creates the `_ActressToLink` join table (byte-identical to
+--     Prisma's implicit-m2m DDL), copies every existing association in,
+--     verifies the counts, and drops the old column.
 --
--- The join table is created byte-identical to what `prisma db push` would
--- generate, so deploying the new code afterwards is a clean no-op push.
---
--- Run this INSIDE the Postgres container, BEFORE deploying the new code:
---   docker exec -i <pg-container> psql -U postgres -d postgres < this-file.sql
+-- It is ONE statement, so it runs unchanged via psql or Prisma
+-- `$executeRawUnsafe` (see scripts/cutover-actresses.ts). The whole block is
+-- atomic — any error aborts it and leaves the database untouched.
 -- ---------------------------------------------------------------------------
-
-BEGIN;
-
--- 1. Insurance: keep a plain copy of the associations (survives the column drop).
-CREATE TABLE IF NOT EXISTS "_actress_migration_backup" AS
-SELECT id AS link_id, "actressId" AS actress_id
-FROM "Link"
-WHERE "actressId" IS NOT NULL;
-
--- 2. Create the join table exactly as Prisma's implicit M:N relation expects.
-CREATE TABLE "_ActressToLink" (
-    "A" text NOT NULL,
-    "B" text NOT NULL
-);
-CREATE UNIQUE INDEX "_ActressToLink_AB_unique" ON "_ActressToLink" ("A", "B");
-CREATE INDEX "_ActressToLink_B_index" ON "_ActressToLink" ("B");
-ALTER TABLE "_ActressToLink"
-    ADD CONSTRAINT "_ActressToLink_A_fkey" FOREIGN KEY ("A")
-    REFERENCES "Actress"(id) ON UPDATE CASCADE ON DELETE CASCADE;
-ALTER TABLE "_ActressToLink"
-    ADD CONSTRAINT "_ActressToLink_B_fkey" FOREIGN KEY ("B")
-    REFERENCES "Link"(id) ON UPDATE CASCADE ON DELETE CASCADE;
-
--- 3. Migrate every existing association ("A" = actress, "B" = link).
-INSERT INTO "_ActressToLink" ("A", "B")
-SELECT "actressId", id
-FROM "Link"
-WHERE "actressId" IS NOT NULL
-ON CONFLICT DO NOTHING;
-
--- 4. Drop the now-migrated column.
-ALTER TABLE "Link" DROP COLUMN "actressId";
-
--- 5. Sanity check — these two counts must match (raises an error and rolls back
---    the whole transaction if they don't).
 DO $$
 DECLARE
     backed_up integer;
     migrated  integer;
 BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'Link'
+          AND column_name = 'actressId'
+    ) THEN
+        RAISE NOTICE 'actresses cutover: Link.actressId absent — nothing to do.';
+        RETURN;
+    END IF;
+
+    RAISE NOTICE 'actresses cutover: migrating Link.actressId -> _ActressToLink ...';
+
+    -- Insurance copy of the associations (survives the column drop).
+    EXECUTE 'CREATE TABLE IF NOT EXISTS "_actress_migration_backup" AS
+             SELECT id AS link_id, "actressId" AS actress_id
+             FROM "Link" WHERE "actressId" IS NOT NULL';
+
+    -- Join table, exactly as `prisma db push` would generate it.
+    EXECUTE 'CREATE TABLE IF NOT EXISTS "_ActressToLink"
+             ("A" text NOT NULL, "B" text NOT NULL)';
+    EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS "_ActressToLink_AB_unique"
+             ON "_ActressToLink" ("A", "B")';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS "_ActressToLink_B_index"
+             ON "_ActressToLink" ("B")';
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '_ActressToLink_A_fkey') THEN
+        EXECUTE 'ALTER TABLE "_ActressToLink" ADD CONSTRAINT "_ActressToLink_A_fkey"
+                 FOREIGN KEY ("A") REFERENCES "Actress"(id) ON UPDATE CASCADE ON DELETE CASCADE';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '_ActressToLink_B_fkey') THEN
+        EXECUTE 'ALTER TABLE "_ActressToLink" ADD CONSTRAINT "_ActressToLink_B_fkey"
+                 FOREIGN KEY ("B") REFERENCES "Link"(id) ON UPDATE CASCADE ON DELETE CASCADE';
+    END IF;
+
+    -- Copy every association ("A" = actress, "B" = link).
+    EXECUTE 'INSERT INTO "_ActressToLink" ("A", "B")
+             SELECT "actressId", id FROM "Link" WHERE "actressId" IS NOT NULL
+             ON CONFLICT DO NOTHING';
+
+    -- Verify nothing was lost before dropping the column.
     SELECT count(*) INTO backed_up FROM "_actress_migration_backup";
     SELECT count(*) INTO migrated  FROM "_ActressToLink";
     IF backed_up <> migrated THEN
-        RAISE EXCEPTION 'Mismatch: % backed up but % migrated', backed_up, migrated;
+        RAISE EXCEPTION 'actresses cutover aborted: % backed up but % migrated',
+            backed_up, migrated;
     END IF;
-    RAISE NOTICE 'Migrated % associations into _ActressToLink', migrated;
-END $$;
 
-COMMIT;
+    EXECUTE 'ALTER TABLE "Link" DROP COLUMN "actressId"';
+
+    RAISE NOTICE 'actresses cutover: migrated % associations.', migrated;
+END $$;
