@@ -61,7 +61,10 @@ async function handleQuickAdd(request: NextRequest): Promise<NextResponse> {
   }
 
   // Don't create duplicates for the same user.
-  const existing = await prisma.link.findFirst({ where: { url, userId } });
+  const existing = await prisma.link.findFirst({
+    where: { url, userId },
+    include: { actresses: true },
+  });
   if (existing) {
     return NextResponse.json({ ok: true, duplicate: true, link: existing });
   }

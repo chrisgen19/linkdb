@@ -60,11 +60,15 @@ BEGIN
              SELECT "actressId", id FROM "Link" WHERE "actressId" IS NOT NULL
              ON CONFLICT DO NOTHING';
 
-    -- Verify nothing was lost before dropping the column.
+    -- Verify nothing was lost: every backed-up pair must be present in the
+    -- join table. Counting matched pairs (rather than all join rows) keeps the
+    -- check correct even if the join table already held unrelated rows.
     SELECT count(*) INTO backed_up FROM "_actress_migration_backup";
-    SELECT count(*) INTO migrated  FROM "_ActressToLink";
+    SELECT count(*) INTO migrated
+    FROM "_actress_migration_backup" b
+    JOIN "_ActressToLink" j ON j."A" = b.actress_id AND j."B" = b.link_id;
     IF backed_up <> migrated THEN
-        RAISE EXCEPTION 'actresses cutover aborted: % backed up but % migrated',
+        RAISE EXCEPTION 'actresses cutover aborted: % backed up but % present in join table',
             backed_up, migrated;
     END IF;
 

@@ -42,7 +42,11 @@ export async function resolveActresses(names: string[]): Promise<Actress[]> {
         const winner = await prisma.actress.findFirst({
           where: { name: { equals: name, mode: 'insensitive' } },
         });
-        if (winner) resolved.push(winner);
+        // Don't silently drop the name — if the conflicting row can't be
+        // found (e.g. it was deleted between create and re-find), rethrow so
+        // callers fail loudly rather than saving with missing tags.
+        if (!winner) throw error;
+        resolved.push(winner);
       } else {
         throw error;
       }

@@ -35,23 +35,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     }
 
-    // Check if actress already exists
-    const existingActress = await prisma.actress.findUnique({
-      where: { name: name.trim() },
-    });
-
-    if (existingActress) {
-      return NextResponse.json(existingActress);
-    }
-
-    // Create new actress
-    const actress = await prisma.actress.create({
-      data: {
-        name: name.trim(),
-      },
-    });
-
-    return NextResponse.json(actress, { status: 201 });
+    // Route single-name through the same case-insensitive find-or-create as the
+    // bulk path so `{ name: "anna" }` resolves to an existing "Anna" instead of
+    // creating a duplicate.
+    const [actress] = await resolveActresses([name]);
+    return NextResponse.json(actress);
   } catch (error) {
     console.error('Error creating actress:', error);
     return NextResponse.json(
