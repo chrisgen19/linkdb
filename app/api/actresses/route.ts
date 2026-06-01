@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { resolveActresses } from '@/lib/actresses';
 
 // GET all actresses
 export async function GET() {
@@ -23,7 +24,12 @@ export async function GET() {
 // POST a new actress
 export async function POST(request: NextRequest) {
   try {
-    const { name } = await request.json();
+    const { name, names } = await request.json();
+
+    // Bulk find-or-create: returns the resolved actresses as an array.
+    if (Array.isArray(names)) {
+      return NextResponse.json(await resolveActresses(names));
+    }
 
     if (!name || !name.trim()) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });

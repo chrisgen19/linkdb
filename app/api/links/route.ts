@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
@@ -17,7 +18,7 @@ export async function GET() {
         userId: session.user.id,
       },
       include: {
-        actress: true,
+        actresses: true,
       },
       orderBy: {
         createdAt: 'desc',
@@ -43,11 +44,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { url, title, image, favorite, actressId } = await request.json();
+    const { url, title, image, favorite, actressIds, actressId } =
+      await request.json();
 
     if (!url) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
+
+    // Accept `actressIds: string[]`; tolerate a legacy single `actressId`.
+    const ids: string[] = Array.isArray(actressIds)
+      ? actressIds
+      : actressId
+        ? [actressId]
+        : [];
 
     // Check if link already exists for this user
     const existingLink = await prisma.link.findFirst({
@@ -71,11 +80,11 @@ export async function POST(request: NextRequest) {
         title: title || null,
         image: image || null,
         favorite: favorite || false,
-        actressId: actressId || null,
+        actresses: { connect: ids.map((id) => ({ id })) },
         userId: session.user.id,
       },
       include: {
-        actress: true,
+        actresses: true,
       },
     });
 
@@ -98,7 +107,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { id, favorite, actressId, title, image } = await request.json();
+    const { id, favorite, actressIds, title, image } = await request.json();
 
     if (!id) {
       return NextResponse.json({ error: 'ID is required' }, { status: 400 });
@@ -117,9 +126,12 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Build update data object with only provided fields
-    const updateData: any = {};
+    const updateData: Prisma.LinkUpdateInput = {};
     if (favorite !== undefined) updateData.favorite = favorite;
-    if (actressId !== undefined) updateData.actressId = actressId;
+    // Replace the whole tag set when actressIds is provided.
+    if (Array.isArray(actressIds)) {
+      updateData.actresses = { set: actressIds.map((aid: string) => ({ id: aid })) };
+    }
     if (title !== undefined) updateData.title = title;
     if (image !== undefined) updateData.image = image;
 
@@ -127,7 +139,7 @@ export async function PATCH(request: NextRequest) {
       where: { id },
       data: updateData,
       include: {
-        actress: true,
+        actresses: true,
       },
     });
 

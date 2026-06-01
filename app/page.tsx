@@ -66,12 +66,16 @@ export default function Home() {
     const q = query.trim().toLowerCase();
     let result = links.filter((link) => {
       if (filter === 'favorites' && !link.favorite) return false;
-      if (selectedActress && link.actressId !== selectedActress.id) return false;
+      if (
+        selectedActress &&
+        !link.actresses.some((a) => a.id === selectedActress.id)
+      )
+        return false;
       if (!q) return true;
       return (
         link.title?.toLowerCase().includes(q) ||
         link.url.toLowerCase().includes(q) ||
-        link.actress?.name.toLowerCase().includes(q)
+        link.actresses.some((a) => a.name.toLowerCase().includes(q))
       );
     });
     if (filter === 'most-viewed') {
@@ -86,20 +90,21 @@ export default function Home() {
   const actressSummaries = useMemo<ActressSummary[]>(() => {
     const map = new Map<string, ActressSummary>();
     for (const link of links) {
-      if (!link.actress) continue;
-      const existing = map.get(link.actress.id);
-      if (existing) {
-        existing.count++;
-        if (link.image && !existing.images.includes(link.image)) {
-          existing.images.push(link.image);
+      for (const actress of link.actresses) {
+        const existing = map.get(actress.id);
+        if (existing) {
+          existing.count++;
+          if (link.image && !existing.images.includes(link.image)) {
+            existing.images.push(link.image);
+          }
+        } else {
+          map.set(actress.id, {
+            id: actress.id,
+            name: actress.name,
+            images: link.image ? [link.image] : [],
+            count: 1,
+          });
         }
-      } else {
-        map.set(link.actress.id, {
-          id: link.actress.id,
-          name: link.actress.name,
-          images: link.image ? [link.image] : [],
-          count: 1,
-        });
       }
     }
     const q = query.trim().toLowerCase();

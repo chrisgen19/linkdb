@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { resolveActresses } from '@/lib/actresses';
 import { tokenFromRequest, userIdFromApiToken } from '@/lib/api-token';
 import { assertHttpUrl, extractMetadata, MetadataError } from '@/lib/metadata';
 
@@ -23,16 +24,21 @@ async function handleQuickAdd(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
   }
 
-  // URL from the query string, or (for POST) a JSON / form body.
+  // URL (and optional comma-separated actresses) from the query string, or
+  // (for POST) a JSON / form body.
   let url = request.nextUrl.searchParams.get('url') || '';
-  if (!url && request.method !== 'GET') {
+  let actressParam = request.nextUrl.searchParams.get('actress') || '';
+  if ((!url || !actressParam) && request.method !== 'GET') {
     const contentType = request.headers.get('content-type') || '';
     try {
       if (contentType.includes('application/json')) {
-        url = (await request.json())?.url || '';
+        const body = await request.json();
+        url = url || body?.url || '';
+        actressParam = actressParam || body?.actress || '';
       } else {
         const form = await request.formData();
-        url = String(form.get('url') || '');
+        url = url || String(form.get('url') || '');
+        actressParam = actressParam || String(form.get('actress') || '');
       }
     } catch {
       // Body empty/unparseable — handled by the validation below.
@@ -42,6 +48,9 @@ async function handleQuickAdd(request: NextRequest): Promise<NextResponse> {
   if (!url) {
     return NextResponse.json({ error: 'URL is required' }, { status: 400 });
   }
+
+  // Comma-separated actresses → find-or-create, then connect on save.
+  const actresses = actressParam ? await resolveActresses(actressParam.split(',')) : [];
 
   try {
     assertHttpUrl(url);
@@ -72,8 +81,14 @@ async function handleQuickAdd(request: NextRequest): Promise<NextResponse> {
   }
 
   const link = await prisma.link.create({
-    data: { url, title, image, userId },
-    include: { actress: true },
+    data: {
+      url,
+      title,
+      image,
+      userId,
+      actresses: { connect: actresses.map((a) => ({ id: a.id })) },
+    },
+    include: { actresses: true },
   });
 
   return NextResponse.json({ ok: true, link }, { status: 201 });

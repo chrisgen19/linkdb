@@ -116,8 +116,11 @@ function LinkForm({
   const [url, setUrl] = React.useState("");
   const [favorite, setFavorite] = React.useState(false);
   const [actressInput, setActressInput] = React.useState("");
-  const [selectedActress, setSelectedActress] =
-    React.useState<Actress | null>(null);
+  // Committed actress pills. New (just-typed) names have id === null and are
+  // resolved to real actresses on submit; existing ones carry their id.
+  const [pills, setPills] = React.useState<{ id: string | null; name: string }[]>(
+    []
+  );
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
 
@@ -126,42 +129,86 @@ function LinkForm({
     if (editingLink) {
       setUrl(editingLink.url);
       setFavorite(editingLink.favorite);
-      setActressInput(editingLink.actress?.name ?? "");
-      setSelectedActress(editingLink.actress);
+      setActressInput("");
+      setPills(editingLink.actresses.map((a) => ({ id: a.id, name: a.name })));
     } else {
       setUrl("");
       setFavorite(false);
       setActressInput("");
-      setSelectedActress(null);
+      setPills([]);
     }
   }, [editingLink]);
 
+  function addPill(name: string, id: string | null = null) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setPills((prev) =>
+      prev.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())
+        ? prev
+        : [...prev, { id, name: trimmed }]
+    );
+  }
+
+  function removePill(index: number) {
+    setPills((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function handleInputChange(value: string) {
+    // A comma (typed or pasted) commits each complete segment as a pill.
+    if (value.includes(",")) {
+      const parts = value.split(",");
+      const remainder = parts.pop() ?? "";
+      parts.forEach((p) => addPill(p));
+      setActressInput(remainder);
+    } else {
+      setActressInput(value);
+    }
+    setShowDropdown(true);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" && actressInput.trim()) {
+      e.preventDefault();
+      addPill(actressInput);
+      setActressInput("");
+      setShowDropdown(false);
+    } else if (e.key === "Backspace" && !actressInput && pills.length > 0) {
+      removePill(pills.length - 1);
+    }
+  }
+
   const filteredActresses = React.useMemo(() => {
     const q = actressInput.trim().toLowerCase();
-    if (!q) return actresses.slice(0, 8);
-    return actresses
-      .filter((a) => a.name.toLowerCase().includes(q))
-      .slice(0, 8);
-  }, [actressInput, actresses]);
+    const taken = new Set(pills.map((p) => p.name.toLowerCase()));
+    const pool = actresses.filter((a) => !taken.has(a.name.toLowerCase()));
+    if (!q) return pool.slice(0, 8);
+    return pool.filter((a) => a.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [actressInput, actresses, pills]);
 
   const showCreateOption =
     actressInput.trim().length > 0 &&
     !actresses.some(
       (a) => a.name.toLowerCase() === actressInput.trim().toLowerCase()
+    ) &&
+    !pills.some(
+      (p) => p.name.toLowerCase() === actressInput.trim().toLowerCase()
     );
 
-  async function resolveActressId(): Promise<string | null> {
-    if (selectedActress) return selectedActress.id;
-    if (!actressInput.trim()) return null;
+  /** Find-or-create every pill (plus any trailing text) → actress ids. */
+  async function resolveActressIds(): Promise<string[]> {
+    const names = pills.map((p) => p.name);
+    const trailing = actressInput.trim();
+    if (trailing) names.push(trailing);
+    if (names.length === 0) return [];
     const res = await fetch("/api/actresses", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: actressInput.trim() }),
+      body: JSON.stringify({ names }),
     });
-    if (!res.ok) return null;
-    const actress: Actress = await res.json();
-    onActressCreated(actress);
-    return actress.id;
+    if (!res.ok) return [];
+    const resolved: Actress[] = await res.json();
+    resolved.forEach(onActressCreated);
+    return resolved.map((a) => a.id);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -169,13 +216,13 @@ function LinkForm({
     setLoading(true);
 
     try {
-      const actressId = await resolveActressId();
+      const actressIds = await resolveActressIds();
 
       if (editingLink) {
         const res = await fetch("/api/links", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: editingLink.id, favorite, actressId }),
+          body: JSON.stringify({ id: editingLink.id, favorite, actressIds }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
@@ -216,7 +263,7 @@ function LinkForm({
       const saveRes = await fetch("/api/links", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...metadata, favorite, actressId }),
+        body: JSON.stringify({ ...metadata, favorite, actressIds }),
       });
       if (!saveRes.ok) {
         const data = await saveRes.json().catch(() => ({}));
@@ -271,34 +318,38 @@ function LinkForm({
           <span className="font-normal text-muted-foreground">(optional)</span>
         </Label>
         <div className="relative">
-          <Input
-            id="actress"
-            value={actressInput}
-            onChange={(e) => {
-              setActressInput(e.target.value);
-              setSelectedActress(null);
-              setShowDropdown(true);
-            }}
-            onFocus={() => setShowDropdown(true)}
-            onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
-            placeholder="Search or add a tag"
-            autoComplete="off"
-            disabled={loading}
-            className="h-12"
-          />
-          {selectedActress && (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedActress(null);
-                setActressInput("");
-              }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted-foreground hover:bg-accent"
-              aria-label="Clear actress"
-            >
-              <X className="size-4" />
-            </button>
-          )}
+          {/* Tag-pill input: each committed actress shows as a removable chip. */}
+          <div className="flex min-h-12 flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-2 text-sm focus-within:ring-1 focus-within:ring-ring">
+            {pills.map((pill, i) => (
+              <span
+                key={pill.id ?? `new-${pill.name}`}
+                className="inline-flex items-center gap-1 rounded-full bg-secondary py-1 pl-2.5 pr-1 text-xs font-medium text-secondary-foreground"
+              >
+                {pill.name}
+                <button
+                  type="button"
+                  onClick={() => removePill(i)}
+                  disabled={loading}
+                  className="grid size-4 place-items-center rounded-full text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                  aria-label={`Remove ${pill.name}`}
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            ))}
+            <input
+              id="actress"
+              value={actressInput}
+              onChange={(e) => handleInputChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onFocus={() => setShowDropdown(true)}
+              onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
+              placeholder={pills.length ? "Add another…" : "Search or add tags"}
+              autoComplete="off"
+              disabled={loading}
+              className="h-7 min-w-[8rem] flex-1 bg-transparent px-1 outline-none placeholder:text-muted-foreground disabled:opacity-50"
+            />
+          </div>
 
           {showDropdown && (filteredActresses.length > 0 || showCreateOption) && (
             <div className="absolute z-50 mt-1.5 max-h-56 w-full overflow-y-auto rounded-lg border bg-popover p-1.5 shadow-lg scrollbar-thin">
@@ -308,9 +359,8 @@ function LinkForm({
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
-                    setSelectedActress(a);
-                    setActressInput(a.name);
-                    setShowDropdown(false);
+                    addPill(a.name, a.id);
+                    setActressInput("");
                   }}
                   className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm hover:bg-accent"
                 >
@@ -322,7 +372,10 @@ function LinkForm({
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => setShowDropdown(false)}
+                  onClick={() => {
+                    addPill(actressInput);
+                    setActressInput("");
+                  }}
                   className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-sm text-primary hover:bg-accent"
                 >
                   <Sparkles className="size-3.5 shrink-0" />

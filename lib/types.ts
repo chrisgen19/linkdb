@@ -10,8 +10,7 @@ export interface Link {
   image: string | null;
   favorite: boolean;
   clickCount: number;
-  actressId: string | null;
-  actress: Actress | null;
+  actresses: Actress[];
   createdAt: string;
 }
 

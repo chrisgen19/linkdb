@@ -38,7 +38,7 @@ export async function POST(
         },
       },
       include: {
-        actress: true,
+        actresses: true,
       },
     });
 
