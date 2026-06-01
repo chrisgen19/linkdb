@@ -205,7 +205,9 @@ function LinkForm({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ names }),
     });
-    if (!res.ok) return [];
+    // Throw rather than returning [] — a silent empty set would make the
+    // PATCH/POST below wipe every existing tag on a transient failure.
+    if (!res.ok) throw new Error("Couldn't save the actress tags");
     const resolved: Actress[] = await res.json();
     resolved.forEach(onActressCreated);
     return resolved.map((a) => a.id);
