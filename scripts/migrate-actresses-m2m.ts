@@ -38,14 +38,24 @@ async function importPairs() {
   }
   const pairs: Pair[] = JSON.parse(readFileSync(PAIRS_FILE, 'utf-8'));
   let applied = 0;
+  let failed = 0;
   for (const { id, actressId } of pairs) {
-    await prisma.link.update({
-      where: { id },
-      data: { actresses: { connect: { id: actressId } } },
-    });
-    applied++;
+    // A link/actress could have been deleted between export and import. Skip
+    // and report those rather than aborting the whole run mid-migration.
+    try {
+      await prisma.link.update({
+        where: { id },
+        data: { actresses: { connect: { id: actressId } } },
+      });
+      applied++;
+    } catch (e) {
+      failed++;
+      console.warn(`Skipped pair link=${id} actress=${actressId}:`, e);
+    }
   }
-  console.log(`Reconnected ${applied} of ${pairs.length} pairs into the join table`);
+  console.log(
+    `Reconnected ${applied} of ${pairs.length} pairs into the join table (${failed} skipped)`
+  );
 }
 
 async function main() {
