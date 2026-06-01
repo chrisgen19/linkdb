@@ -120,16 +120,22 @@ export function LinkCard({
 
         <p className="truncate text-xs text-muted-foreground">{domain}</p>
 
-        {link.actress && (
-          <div>
-            <button type="button" onClick={() => onActressClick(link.actress!)}>
-              <Badge
-                variant="secondary"
-                className="cursor-pointer font-normal hover:bg-secondary/70"
+        {link.actresses.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {link.actresses.map((actress) => (
+              <button
+                key={actress.id}
+                type="button"
+                onClick={() => onActressClick(actress)}
               >
-                {link.actress.name}
-              </Badge>
-            </button>
+                <Badge
+                  variant="secondary"
+                  className="cursor-pointer font-normal hover:bg-secondary/70"
+                >
+                  {actress.name}
+                </Badge>
+              </button>
+            ))}
           </div>
         )}
 

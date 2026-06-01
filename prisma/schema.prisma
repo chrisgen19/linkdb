@@ -31,8 +31,7 @@ model Link {
   image       String?
   favorite    Boolean  @default(false)
   clickCount  Int      @default(0)
-  actressId   String?
-  actress     Actress? @relation(fields: [actressId], references: [id], onDelete: SetNull)
+  actresses   Actress[]
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
