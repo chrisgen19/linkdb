@@ -2,77 +2,99 @@
 -- Idempotent cutover: Link.actressId (1:N)  ->  Link.actresses[] (M:N)
 --
 -- Safe to run on EVERY deploy. A single guarded DO block that:
---   * does nothing if `Link.actressId` is absent (fresh DB or already migrated);
---   * otherwise creates the `_ActressToLink` join table (byte-identical to
---     Prisma's implicit-m2m DDL), copies every existing association in,
---     verifies the counts, and drops the old column.
+--   * migrates Link.actressId into the `_ActressToLink` join table (byte-identical
+--     to Prisma's implicit-m2m DDL) when the column still exists, verifying every
+--     source pair landed before dropping the column;
+--   * cleans up the legacy `_actress_migration_backup` table that earlier versions
+--     of this script created. That table is NOT in the Prisma schema, so leaving
+--     it makes `prisma db push` fail ("would drop a non-empty table"). It is only
+--     dropped after confirming all of its rows are present in the join table, so
+--     no association can ever be lost.
 --
 -- It is ONE statement, so it runs unchanged via psql or Prisma
--- `$executeRawUnsafe` (see scripts/cutover-actresses.ts). The whole block is
+-- `$executeRawUnsafe` (see scripts/cutover-actresses.mjs). The whole block is
 -- atomic — any error aborts it and leaves the database untouched.
 -- ---------------------------------------------------------------------------
 DO $$
 DECLARE
-    backed_up integer;
-    migrated  integer;
+    src_pairs   integer;
+    join_pairs  integer;
+    bak_pairs   integer;
+    bak_present integer;
 BEGIN
     -- Serialize concurrent runs (e.g. two replicas starting at once): the rest
-    -- block here until the first transaction commits, then fall through the
-    -- guard below as a clean no-op instead of racing the destructive DROP.
+    -- block here until the first transaction commits, then fall through as a
+    -- clean no-op instead of racing the destructive changes.
     PERFORM pg_advisory_xact_lock(4019283746501);
 
-    IF NOT EXISTS (
+    -- PHASE 1 — migrate the column into the join table, if it still exists.
+    IF EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = current_schema()
           AND table_name = 'Link'
           AND column_name = 'actressId'
     ) THEN
-        RAISE NOTICE 'actresses cutover: Link.actressId absent — nothing to do.';
-        RETURN;
+        RAISE NOTICE 'actresses cutover: migrating Link.actressId -> _ActressToLink ...';
+
+        -- Join table, exactly as `prisma db push` would generate it.
+        EXECUTE 'CREATE TABLE IF NOT EXISTS "_ActressToLink"
+                 ("A" text NOT NULL, "B" text NOT NULL)';
+        EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS "_ActressToLink_AB_unique"
+                 ON "_ActressToLink" ("A", "B")';
+        EXECUTE 'CREATE INDEX IF NOT EXISTS "_ActressToLink_B_index"
+                 ON "_ActressToLink" ("B")';
+
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '_ActressToLink_A_fkey') THEN
+            EXECUTE 'ALTER TABLE "_ActressToLink" ADD CONSTRAINT "_ActressToLink_A_fkey"
+                     FOREIGN KEY ("A") REFERENCES "Actress"(id) ON UPDATE CASCADE ON DELETE CASCADE';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '_ActressToLink_B_fkey') THEN
+            EXECUTE 'ALTER TABLE "_ActressToLink" ADD CONSTRAINT "_ActressToLink_B_fkey"
+                     FOREIGN KEY ("B") REFERENCES "Link"(id) ON UPDATE CASCADE ON DELETE CASCADE';
+        END IF;
+
+        SELECT count(*) INTO src_pairs FROM "Link" WHERE "actressId" IS NOT NULL;
+
+        EXECUTE 'INSERT INTO "_ActressToLink" ("A", "B")
+                 SELECT "actressId", id FROM "Link" WHERE "actressId" IS NOT NULL
+                 ON CONFLICT DO NOTHING';
+
+        -- Verify every source pair is present before dropping the column.
+        SELECT count(*) INTO join_pairs
+        FROM "Link" l
+        JOIN "_ActressToLink" j ON j."A" = l."actressId" AND j."B" = l.id
+        WHERE l."actressId" IS NOT NULL;
+
+        IF src_pairs <> join_pairs THEN
+            RAISE EXCEPTION 'actresses cutover aborted: % source pairs but % in join table',
+                src_pairs, join_pairs;
+        END IF;
+
+        EXECUTE 'ALTER TABLE "Link" DROP COLUMN "actressId"';
+        RAISE NOTICE 'actresses cutover: migrated % associations.', src_pairs;
+    ELSE
+        RAISE NOTICE 'actresses cutover: Link.actressId absent — already migrated or fresh DB.';
     END IF;
 
-    RAISE NOTICE 'actresses cutover: migrating Link.actressId -> _ActressToLink ...';
+    -- PHASE 2 — drop the legacy insurance table (it blocks `prisma db push`).
+    -- Only after confirming every one of its rows lives in the join table.
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = current_schema()
+          AND table_name = '_actress_migration_backup'
+    ) THEN
+        SELECT count(*) INTO bak_pairs FROM "_actress_migration_backup";
+        SELECT count(*) INTO bak_present
+        FROM "_actress_migration_backup" b
+        JOIN "_ActressToLink" j ON j."A" = b.actress_id AND j."B" = b.link_id;
 
-    -- Insurance copy of the associations (survives the column drop).
-    EXECUTE 'CREATE TABLE IF NOT EXISTS "_actress_migration_backup" AS
-             SELECT id AS link_id, "actressId" AS actress_id
-             FROM "Link" WHERE "actressId" IS NOT NULL';
+        IF bak_pairs <> bak_present THEN
+            RAISE EXCEPTION 'refusing to drop _actress_migration_backup: % rows but only % present in join table',
+                bak_pairs, bak_present;
+        END IF;
 
-    -- Join table, exactly as `prisma db push` would generate it.
-    EXECUTE 'CREATE TABLE IF NOT EXISTS "_ActressToLink"
-             ("A" text NOT NULL, "B" text NOT NULL)';
-    EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS "_ActressToLink_AB_unique"
-             ON "_ActressToLink" ("A", "B")';
-    EXECUTE 'CREATE INDEX IF NOT EXISTS "_ActressToLink_B_index"
-             ON "_ActressToLink" ("B")';
-
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '_ActressToLink_A_fkey') THEN
-        EXECUTE 'ALTER TABLE "_ActressToLink" ADD CONSTRAINT "_ActressToLink_A_fkey"
-                 FOREIGN KEY ("A") REFERENCES "Actress"(id) ON UPDATE CASCADE ON DELETE CASCADE';
+        EXECUTE 'DROP TABLE "_actress_migration_backup"';
+        RAISE NOTICE 'actresses cutover: removed legacy _actress_migration_backup (% rows verified).',
+            bak_pairs;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '_ActressToLink_B_fkey') THEN
-        EXECUTE 'ALTER TABLE "_ActressToLink" ADD CONSTRAINT "_ActressToLink_B_fkey"
-                 FOREIGN KEY ("B") REFERENCES "Link"(id) ON UPDATE CASCADE ON DELETE CASCADE';
-    END IF;
-
-    -- Copy every association ("A" = actress, "B" = link).
-    EXECUTE 'INSERT INTO "_ActressToLink" ("A", "B")
-             SELECT "actressId", id FROM "Link" WHERE "actressId" IS NOT NULL
-             ON CONFLICT DO NOTHING';
-
-    -- Verify nothing was lost: every backed-up pair must be present in the
-    -- join table. Counting matched pairs (rather than all join rows) keeps the
-    -- check correct even if the join table already held unrelated rows.
-    SELECT count(*) INTO backed_up FROM "_actress_migration_backup";
-    SELECT count(*) INTO migrated
-    FROM "_actress_migration_backup" b
-    JOIN "_ActressToLink" j ON j."A" = b.actress_id AND j."B" = b.link_id;
-    IF backed_up <> migrated THEN
-        RAISE EXCEPTION 'actresses cutover aborted: % backed up but % present in join table',
-            backed_up, migrated;
-    END IF;
-
-    EXECUTE 'ALTER TABLE "Link" DROP COLUMN "actressId"';
-
-    RAISE NOTICE 'actresses cutover: migrated % associations.', migrated;
 END $$;
