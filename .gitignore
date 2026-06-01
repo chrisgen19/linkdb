@@ -42,3 +42,6 @@ prisma/dev.db-journal
 
 # migration scratch (link→actress pairs captured before db push)
 scripts/.actress-pairs.json
+
+# local Claude Code settings — machine-local, may hold secrets in the allowlist
+.claude/settings.local.json
