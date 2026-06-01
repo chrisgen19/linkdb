@@ -14,7 +14,7 @@
     "lint": "next lint",
     "refresh-images": "node scripts/refresh-images.mjs",
     "postinstall": "prisma generate",
-    "vercel-build": "prisma db push --accept-data-loss && next build"
+    "vercel-build": "npm run db:cutover && prisma db push && next build"
   },
   "dependencies": {
     "@prisma/client": "^5.8.0",
