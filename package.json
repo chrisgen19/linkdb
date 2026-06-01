@@ -9,12 +9,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "db:cutover": "node scripts/cutover-actresses.mjs",
-    "start": "npm run db:cutover && prisma db push && next start",
+    "start": "prisma db push && next start",
     "lint": "next lint",
     "refresh-images": "node scripts/refresh-images.mjs",
     "postinstall": "prisma generate",
-    "vercel-build": "npm run db:cutover && prisma db push && next build"
+    "vercel-build": "prisma db push && next build"
   },
   "dependencies": {
     "@prisma/client": "^5.8.0",
