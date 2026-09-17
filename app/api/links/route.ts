@@ -3,6 +3,8 @@ import { Prisma } from '@prisma/client';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { findDuplicateLink } from '@/lib/links';
+import { normalizeHttpUrl } from '@/lib/url';
 
 // GET all links for the authenticated user
 export async function GET() {
@@ -44,27 +46,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { url, title, image, favorite, actressIds, actressId } =
+    const { url: rawUrl, title, image, favorite, actressIds, actressId } =
       await request.json();
 
-    if (!url) {
+    if (!rawUrl) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    // Accept `actressIds: string[]`; tolerate a legacy single `actressId`.
-    const ids: string[] = Array.isArray(actressIds)
-      ? actressIds
-      : actressId
-        ? [actressId]
-        : [];
+    // Only store http(s) links, in normalized form.
+    const url = typeof rawUrl === 'string' ? normalizeHttpUrl(rawUrl) : null;
+    if (!url) {
+      return NextResponse.json(
+        { error: 'Only http(s) URLs are supported' },
+        { status: 400 }
+      );
+    }
 
-    // Check if link already exists for this user
-    const existingLink = await prisma.link.findFirst({
-      where: {
-        url,
-        userId: session.user.id,
-      },
-    });
+    // Accept `actressIds: string[]`; tolerate a legacy single `actressId`.
+    const ids: string[] = (
+      Array.isArray(actressIds) ? actressIds : actressId ? [actressId] : []
+    ).filter((id: unknown): id is string => typeof id === 'string');
+
+    // Check if the link (or an equivalent spelling of it) already exists
+    const existingLink = await findDuplicateLink(session.user.id, rawUrl, url);
 
     if (existingLink) {
       return NextResponse.json(
