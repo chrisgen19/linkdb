@@ -263,26 +263,12 @@ function LinkForm({
       (p) => p.name.toLowerCase() === actressInput.trim().toLowerCase()
     );
 
-  /** Find-or-create every pill (plus any trailing text) → actress ids. */
-  async function resolveActressIds(): Promise<string[]> {
+  /** Every pill plus any trailing typed text; the server finds or creates them. */
+  function actressNames(): string[] {
     const names = pills.map((p) => p.name);
     const trailing = actressInput.trim();
     if (trailing) names.push(trailing);
-    if (names.length === 0) return [];
-    const res = await fetch("/api/actresses", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ names }),
-    });
-    // Throw rather than returning [] — a silent empty set would make the
-    // PATCH/POST below wipe every existing tag on a transient failure.
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || "Couldn't save the actress tags");
-    }
-    const resolved: Actress[] = await res.json();
-    resolved.forEach(onActressCreated);
-    return resolved.map((a) => a.id);
+    return names;
   }
 
   /**
@@ -313,31 +299,33 @@ function LinkForm({
     return fallback;
   }
 
-  async function createLink(metadata: PageMeta, actressIds: string[]) {
+  /** Sends the create/update request; the server resolves `actressNames` to tags. */
+  async function writeLink(
+    method: "POST" | "PATCH",
+    body: Record<string, unknown>,
+    fallbackError: string
+  ): Promise<Link> {
     const res = await fetch("/api/links", {
-      method: "POST",
+      method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...metadata, favorite, actressIds }),
+      body: JSON.stringify({ ...body, favorite, actressNames: actressNames() }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || "Failed to save link");
+      throw new Error(data.error || fallbackError);
     }
-    onSaved(await res.json(), "create");
+    const link: Link = await res.json();
+    link.actresses.forEach(onActressCreated);
+    return link;
+  }
+
+  async function createLink(metadata: PageMeta) {
+    onSaved(await writeLink("POST", { ...metadata }, "Failed to save link"), "create");
     toast.success(metadata.title ? `Saved “${metadata.title}”` : "Link saved");
   }
 
-  async function updateLink(id: string, actressIds: string[]) {
-    const res = await fetch("/api/links", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, favorite, actressIds }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || "Failed to update link");
-    }
-    onSaved(await res.json(), "update");
+  async function updateLink(id: string) {
+    onSaved(await writeLink("PATCH", { id }, "Failed to update link"), "update");
     toast.success("Link updated");
   }
 
@@ -362,17 +350,15 @@ function LinkForm({
 
     let committed = false;
     try {
-      // The lookup runs before any tags are created: it can be cancelled or
-      // reject the URL (duplicate, invalid), and neither should leave tags behind.
       const metadata = editingLink ? null : await fetchMetadata(href, signal);
-      // Closed before saving: save nothing.
+      // Closed before saving: save nothing (no link, no tags).
       if (signal.aborted) return;
-      // From here the save (tags, then link) finishes and reports errors, even
-      // if the sheet closes.
+      // The single create/update request (which also creates new tags) is the
+      // commit point: once sent it finishes and reports errors, even if the
+      // sheet closes.
       committed = true;
-      const actressIds = await resolveActressIds();
-      if (editingLink) await updateLink(editingLink.id, actressIds);
-      else if (metadata) await createLink(metadata, actressIds);
+      if (editingLink) await updateLink(editingLink.id);
+      else if (metadata) await createLink(metadata);
       // Don't close a sheet the user has since closed or reopened for another link.
       if (!signal.aborted) onClose();
     } catch (err) {

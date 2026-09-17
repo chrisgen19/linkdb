@@ -18,6 +18,21 @@ export function actressNamesError(names: string[]): string | null {
 }
 
 /**
+ * Validates an optional `actressNames` request field: absent, or an array of
+ * strings within the limits. Returns the names (empty when absent) or an error.
+ */
+export function parseActressNames(
+  value: unknown
+): { names: string[]; error?: never } | { error: string } {
+  if (value === undefined) return { names: [] };
+  if (!Array.isArray(value) || !value.every((n) => typeof n === 'string')) {
+    return { error: 'Actress names must be an array of strings' };
+  }
+  const error = actressNamesError(value);
+  return error ? { error } : { names: value };
+}
+
+/**
  * Find-or-create actresses by name. Trims each name, drops blanks, and dedupes
  * the input case-insensitively. Matching against existing rows is also
  * case-insensitive so "Anna" and "anna" resolve to the same actress.

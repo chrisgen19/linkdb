@@ -3,8 +3,11 @@ import { Prisma } from '@prisma/client';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { parseActressNames, resolveActresses } from '@/lib/actresses';
 import { findDuplicateLink } from '@/lib/links';
 import { normalizeHttpUrl } from '@/lib/url';
+
+const uniqueIds = (ids: string[]) => Array.from(new Set(ids));
 
 // GET all links for the authenticated user
 export async function GET() {
@@ -46,8 +49,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { url: rawUrl, title, image, favorite, actressIds, actressId } =
-      await request.json();
+    const {
+      url: rawUrl,
+      title,
+      image,
+      favorite,
+      actressIds,
+      actressId,
+      actressNames,
+    } = await request.json();
 
     if (!rawUrl) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
@@ -67,6 +77,11 @@ export async function POST(request: NextRequest) {
       Array.isArray(actressIds) ? actressIds : actressId ? [actressId] : []
     ).filter((id: unknown): id is string => typeof id === 'string');
 
+    const parsedNames = parseActressNames(actressNames);
+    if (parsedNames.error !== undefined) {
+      return NextResponse.json({ error: parsedNames.error }, { status: 400 });
+    }
+
     // Check if the link (or an equivalent spelling of it) already exists
     const existingLink = await findDuplicateLink(session.user.id, rawUrl, url);
 
@@ -77,6 +92,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Tag names are resolved here, with the link write, so the client's single
+    // save request is the point after which nothing can be cancelled.
+    const resolved = await resolveActresses(parsedNames.names);
+    const tagIds = uniqueIds([...ids, ...resolved.map((a) => a.id)]);
+
     // Create new link
     const link = await prisma.link.create({
       data: {
@@ -84,7 +104,7 @@ export async function POST(request: NextRequest) {
         title: title || null,
         image: image || null,
         favorite: favorite || false,
-        actresses: { connect: ids.map((id) => ({ id })) },
+        actresses: { connect: tagIds.map((id) => ({ id })) },
         userId: session.user.id,
       },
       include: {
@@ -111,10 +131,16 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { id, favorite, actressIds, title, image } = await request.json();
+    const { id, favorite, actressIds, actressNames, title, image } =
+      await request.json();
 
     if (!id) {
       return NextResponse.json({ error: 'ID is required' }, { status: 400 });
+    }
+
+    const parsedNames = parseActressNames(actressNames);
+    if (parsedNames.error !== undefined) {
+      return NextResponse.json({ error: parsedNames.error }, { status: 400 });
     }
 
     // Verify the link belongs to the user
@@ -132,9 +158,14 @@ export async function PATCH(request: NextRequest) {
     // Build update data object with only provided fields
     const updateData: Prisma.LinkUpdateInput = {};
     if (favorite !== undefined) updateData.favorite = favorite;
-    // Replace the whole tag set when actressIds is provided.
-    if (Array.isArray(actressIds)) {
-      updateData.actresses = { set: actressIds.map((aid: string) => ({ id: aid })) };
+    // Replace the whole tag set when actressIds and/or actressNames is provided.
+    if (Array.isArray(actressIds) || actressNames !== undefined) {
+      const ids = (Array.isArray(actressIds) ? actressIds : []).filter(
+        (aid: unknown): aid is string => typeof aid === 'string'
+      );
+      const resolved = await resolveActresses(parsedNames.names);
+      const tagIds = uniqueIds([...ids, ...resolved.map((a) => a.id)]);
+      updateData.actresses = { set: tagIds.map((aid) => ({ id: aid })) };
     }
     if (title !== undefined) updateData.title = title;
     if (image !== undefined) updateData.image = image;
