@@ -34,6 +34,18 @@ export function parseUserUrl(raw: string): string | null {
 }
 
 /**
+ * Finds a link in copied text: the whole text if it's an http(s) URL, else the
+ * first http(s) URL inside it (share sheets often copy "Title https://…").
+ * Requires an explicit scheme so plain text like "file.txt" isn't a match.
+ */
+export function findUrlInText(text: string): string | null {
+  const match = text.match(/https?:\/\/[^\s<>"']+/i);
+  if (!match) return null;
+  // Drop sentence punctuation glued to the end of the link.
+  return normalizeHttpUrl(match[0].replace(/[.,;:!?)\]}]+$/, ''));
+}
+
+/**
  * Spellings that count as the same saved link: the raw input (rows saved before
  * URLs were normalized), the normalized URL, and the same URL with the trailing
  * slash toggled (`/page` vs `/page/`, `example.com` vs `example.com/`).

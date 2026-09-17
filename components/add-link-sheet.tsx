@@ -1,12 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { Link2, Loader2, Sparkles, Star, Tag, X } from "lucide-react";
+import {
+  ClipboardPaste,
+  Link2,
+  Loader2,
+  Sparkles,
+  Star,
+  Tag,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import type { Actress, Link } from "@/lib/types";
-import { parseUserUrl } from "@/lib/url";
+import { findUrlInText, parseUserUrl } from "@/lib/url";
+import { useClipboardUrl } from "@/hooks/use-clipboard-url";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import {
   useKeepFocusedFieldInView,
@@ -184,6 +193,9 @@ function LinkForm({
   );
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
+  const clipboard = useClipboardUrl(active && !isEditing);
+  const canPaste = clipboard.supported && !isEditing && !url && !loading;
+  const suggestedUrl = canPaste ? clipboard.detectedUrl : null;
 
   // Closing the sheet (Cancel, swipe, Esc, backdrop) cancels an in-flight save
   // instead of letting it finish in the background.
@@ -335,6 +347,25 @@ function LinkForm({
     toast.success("Link updated");
   }
 
+  /** Fills the URL field from the clipboard (must run from a tap). */
+  async function handlePaste() {
+    let text: string;
+    try {
+      text = await clipboard.readText();
+    } catch {
+      // Denied permission (Chromium) or a dismissed "Paste" callout (Safari/Firefox).
+      toast.error("Couldn't read the clipboard. Long-press the field and choose Paste.");
+      return;
+    }
+    const href = findUrlInText(text) ?? parseUserUrl(text);
+    if (!href) {
+      toast("No link found in your clipboard");
+      return;
+    }
+    setUrl(href);
+    setUrlError(null);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     // The form is noValidate so a bare "example.com" gets https:// added
@@ -382,27 +413,60 @@ function LinkForm({
         <Label htmlFor="url" className="flex items-center gap-1.5">
           <Link2 className="size-3.5 text-muted-foreground" /> URL
         </Label>
-        <Input
-          id="url"
-          type="url"
-          inputMode="url"
-          autoComplete="off"
-          autoCapitalize="none"
-          enterKeyHint="go"
-          value={url}
-          onChange={(e) => {
-            setUrl(e.target.value);
-            setUrlError(null);
-          }}
-          placeholder="https://example.com/…"
-          required
-          aria-invalid={!!urlError}
-          aria-describedby={urlError ? "url-error" : undefined}
-          disabled={loading || isEditing}
-          readOnly={isEditing}
-          className={cn("h-12", urlError && "border-destructive")}
-          autoFocus={autoFocusUrl}
-        />
+        <div className="relative">
+          <Input
+            id="url"
+            type="url"
+            inputMode="url"
+            autoComplete="off"
+            autoCapitalize="none"
+            enterKeyHint="go"
+            value={url}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              setUrlError(null);
+            }}
+            placeholder="https://example.com/…"
+            required
+            aria-invalid={!!urlError}
+            aria-describedby={urlError ? "url-error" : undefined}
+            disabled={loading || isEditing}
+            readOnly={isEditing}
+            className={cn(
+              "h-12",
+              canPaste && !suggestedUrl && "pr-24",
+              urlError && "border-destructive"
+            )}
+            autoFocus={autoFocusUrl}
+          />
+          {canPaste && !suggestedUrl && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              // Keep focus (and the keyboard) on the field while tapping.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={handlePaste}
+              className="absolute right-2 top-1/2 h-8 -translate-y-1/2"
+            >
+              <ClipboardPaste /> Paste
+            </Button>
+          )}
+        </div>
+        {suggestedUrl && (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handlePaste}
+            className="flex w-full items-center gap-2 rounded-md border border-dashed border-primary/40 bg-primary/5 px-3 py-2.5 text-left text-sm transition-colors hover:bg-primary/10"
+          >
+            <ClipboardPaste className="size-4 shrink-0 text-primary" />
+            <span className="shrink-0 font-medium">Paste copied link</span>
+            <span className="min-w-0 truncate text-muted-foreground">
+              {suggestedUrl.replace(/^https?:\/\/(www\.)?/, "")}
+            </span>
+          </button>
+        )}
         {urlError && (
           <p id="url-error" role="alert" className="text-xs text-destructive">
             {urlError}
