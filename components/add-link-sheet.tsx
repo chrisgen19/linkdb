@@ -263,12 +263,18 @@ function LinkForm({
       (p) => p.name.toLowerCase() === actressInput.trim().toLowerCase()
     );
 
-  /** Every pill plus any trailing typed text; the server finds or creates them. */
-  function actressNames(): string[] {
-    const names = pills.map((p) => p.name);
+  /**
+   * Tag payload for the save: existing pills by id (so an edit never re-matches
+   * them by name), new pills plus any trailing typed text by name for the
+   * server to find or create.
+   */
+  function actressPayload(): { actressIds: string[]; actressNames: string[] } {
+    const actressIds = pills.flatMap((p) => (p.id ? [p.id] : []));
+    const actressNames = pills.filter((p) => !p.id).map((p) => p.name);
     const trailing = actressInput.trim();
-    if (trailing) names.push(trailing);
-    return names;
+    const isPill = pills.some((p) => p.name.toLowerCase() === trailing.toLowerCase());
+    if (trailing && !isPill) actressNames.push(trailing);
+    return { actressIds, actressNames };
   }
 
   /**
@@ -299,7 +305,7 @@ function LinkForm({
     return fallback;
   }
 
-  /** Sends the create/update request; the server resolves `actressNames` to tags. */
+  /** Sends the create/update request; the server resolves new tag names. */
   async function writeLink(
     method: "POST" | "PATCH",
     body: Record<string, unknown>,
@@ -308,7 +314,7 @@ function LinkForm({
     const res = await fetch("/api/links", {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...body, favorite, actressNames: actressNames() }),
+      body: JSON.stringify({ ...body, favorite, ...actressPayload() }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

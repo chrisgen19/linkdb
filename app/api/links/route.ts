@@ -3,11 +3,23 @@ import { Prisma } from '@prisma/client';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { parseActressNames, resolveActresses } from '@/lib/actresses';
+import {
+  MAX_ACTRESS_NAMES,
+  parseActressNames,
+  resolveActresses,
+} from '@/lib/actresses';
 import { findDuplicateLink } from '@/lib/links';
 import { normalizeHttpUrl } from '@/lib/url';
 
+const TOO_MANY_TAGS = `At most ${MAX_ACTRESS_NAMES} actress tags per request`;
+
 const uniqueIds = (ids: string[]) => Array.from(new Set(ids));
+
+/** String entries of a request array field; anything else is ignored. */
+const stringIds = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? uniqueIds(value.filter((id): id is string => typeof id === 'string'))
+    : [];
 
 // GET all links for the authenticated user
 export async function GET() {
@@ -73,13 +85,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Accept `actressIds: string[]`; tolerate a legacy single `actressId`.
-    const ids: string[] = (
-      Array.isArray(actressIds) ? actressIds : actressId ? [actressId] : []
-    ).filter((id: unknown): id is string => typeof id === 'string');
+    const ids = stringIds(Array.isArray(actressIds) ? actressIds : [actressId]);
 
     const parsedNames = parseActressNames(actressNames);
     if (parsedNames.error !== undefined) {
       return NextResponse.json({ error: parsedNames.error }, { status: 400 });
+    }
+    if (ids.length + parsedNames.names.length > MAX_ACTRESS_NAMES) {
+      return NextResponse.json({ error: TOO_MANY_TAGS }, { status: 400 });
     }
 
     // Check if the link (or an equivalent spelling of it) already exists
@@ -144,6 +157,10 @@ export async function PATCH(request: NextRequest) {
     if (parsedNames.error !== undefined) {
       return NextResponse.json({ error: parsedNames.error }, { status: 400 });
     }
+    const ids = stringIds(actressIds);
+    if (ids.length + parsedNames.names.length > MAX_ACTRESS_NAMES) {
+      return NextResponse.json({ error: TOO_MANY_TAGS }, { status: 400 });
+    }
 
     // Verify the link belongs to the user
     const existingLink = await prisma.link.findFirst({
@@ -164,9 +181,6 @@ export async function PATCH(request: NextRequest) {
       if (favorite !== undefined) updateData.favorite = favorite;
       // Replace the whole tag set when actressIds and/or actressNames is provided.
       if (Array.isArray(actressIds) || actressNames !== undefined) {
-        const ids = (Array.isArray(actressIds) ? actressIds : []).filter(
-          (aid: unknown): aid is string => typeof aid === 'string'
-        );
         const resolved = await resolveActresses(parsedNames.names, tx);
         const tagIds = uniqueIds([...ids, ...resolved.map((a) => a.id)]);
         updateData.actresses = { set: tagIds.map((aid) => ({ id: aid })) };
