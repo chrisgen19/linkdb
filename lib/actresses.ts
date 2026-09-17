@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import type { Actress } from '@/lib/types';
 
-// Each name costs sequential queries in resolveActresses, so callers cap the input.
+// Bounds the size of a single find-or-create call; callers check before any DB work.
 export const MAX_ACTRESS_NAMES = 50;
 export const MAX_ACTRESS_NAME_LENGTH = 100;
 
@@ -37,9 +37,16 @@ export function parseActressNames(
  * the input case-insensitively. Matching against existing rows is also
  * case-insensitive so "Anna" and "anna" resolve to the same actress.
  *
+ * Pass a transaction client to make the created rows part of a larger write.
+ * Uses a fixed number of queries and never raises on a concurrent insert of
+ * the same name, so it is safe inside a Postgres transaction.
+ *
  * Returns the resolved actresses in the de-duplicated input order.
  */
-export async function resolveActresses(names: string[]): Promise<Actress[]> {
+export async function resolveActresses(
+  names: string[],
+  db: Prisma.TransactionClient = prisma
+): Promise<Actress[]> {
   // Trim, drop blanks, and dedupe case-insensitively (first casing wins).
   const seen = new Set<string>();
   const unique: string[] = [];
@@ -51,37 +58,39 @@ export async function resolveActresses(names: string[]): Promise<Actress[]> {
     seen.add(key);
     unique.push(name);
   }
+  if (unique.length === 0) return [];
 
-  const resolved: Actress[] = [];
-  for (const name of unique) {
-    const existing = await prisma.actress.findFirst({
-      where: { name: { equals: name, mode: 'insensitive' } },
+  const findExisting = async () => {
+    const rows = await db.actress.findMany({
+      where: { OR: unique.map((name) => ({ name: { equals: name, mode: 'insensitive' } })) },
+      orderBy: { createdAt: 'asc' },
     });
-    if (existing) {
-      resolved.push(existing);
-      continue;
+    // Oldest row wins if the table already holds several casings of a name.
+    const byKey = new Map<string, Actress>();
+    for (const row of rows) {
+      const key = row.name.toLowerCase();
+      if (!byKey.has(key)) byKey.set(key, row);
     }
-    try {
-      resolved.push(await prisma.actress.create({ data: { name } }));
-    } catch (error) {
-      // Lost a create race on the unique name — fetch the winner instead.
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        const winner = await prisma.actress.findFirst({
-          where: { name: { equals: name, mode: 'insensitive' } },
-        });
-        // Don't silently drop the name — if the conflicting row can't be
-        // found (e.g. it was deleted between create and re-find), rethrow so
-        // callers fail loudly rather than saving with missing tags.
-        if (!winner) throw error;
-        resolved.push(winner);
-      } else {
-        throw error;
-      }
-    }
+    return byKey;
+  };
+
+  let existing = await findExisting();
+  const missing = unique.filter((name) => !existing.has(name.toLowerCase()));
+  if (missing.length > 0) {
+    // ON CONFLICT DO NOTHING: losing a create race to a concurrent request is
+    // not an error, so an enclosing transaction is not aborted.
+    await db.actress.createMany({
+      data: missing.map((name) => ({ name })),
+      skipDuplicates: true,
+    });
+    existing = await findExisting();
   }
 
-  return resolved;
+  return unique.map((name) => {
+    const actress = existing.get(name.toLowerCase());
+    // Fail loudly rather than saving with a missing tag (e.g. a row deleted
+    // between the insert and the re-read).
+    if (!actress) throw new Error(`Could not resolve actress "${name}"`);
+    return actress;
+  });
 }

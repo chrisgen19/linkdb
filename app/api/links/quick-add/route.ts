@@ -72,9 +72,6 @@ async function handleQuickAdd(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: true, duplicate: true, link: existing });
   }
 
-  // Comma-separated actresses: find-or-create only once the link will be saved.
-  const actresses = actressNames.length ? await resolveActresses(actressNames) : [];
-
   // Best-effort metadata; if scraping fails the link still saves URL-only.
   let title: string | null = null;
   let image: string | null = null;
@@ -89,15 +86,20 @@ async function handleQuickAdd(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const link = await prisma.link.create({
-    data: {
-      url: href,
-      title,
-      image,
-      userId,
-      actresses: { connect: actresses.map((a) => ({ id: a.id })) },
-    },
-    include: { actresses: true },
+  // Comma-separated actresses are created in the same transaction as the link
+  // (after the slow scrape), so a failed save leaves no new tags behind.
+  const link = await prisma.$transaction(async (tx) => {
+    const actresses = await resolveActresses(actressNames, tx);
+    return tx.link.create({
+      data: {
+        url: href,
+        title,
+        image,
+        userId,
+        actresses: { connect: actresses.map((a) => ({ id: a.id })) },
+      },
+      include: { actresses: true },
+    });
   });
 
   return NextResponse.json({ ok: true, link }, { status: 201 });

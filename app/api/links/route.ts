@@ -93,23 +93,25 @@ export async function POST(request: NextRequest) {
     }
 
     // Tag names are resolved here, with the link write, so the client's single
-    // save request is the point after which nothing can be cancelled.
-    const resolved = await resolveActresses(parsedNames.names);
-    const tagIds = uniqueIds([...ids, ...resolved.map((a) => a.id)]);
+    // save request is the point after which nothing can be cancelled. One
+    // transaction: if the link write fails, newly created tags roll back too.
+    const link = await prisma.$transaction(async (tx) => {
+      const resolved = await resolveActresses(parsedNames.names, tx);
+      const tagIds = uniqueIds([...ids, ...resolved.map((a) => a.id)]);
 
-    // Create new link
-    const link = await prisma.link.create({
-      data: {
-        url,
-        title: title || null,
-        image: image || null,
-        favorite: favorite || false,
-        actresses: { connect: tagIds.map((id) => ({ id })) },
-        userId: session.user.id,
-      },
-      include: {
-        actresses: true,
-      },
+      return tx.link.create({
+        data: {
+          url,
+          title: title || null,
+          image: image || null,
+          favorite: favorite || false,
+          actresses: { connect: tagIds.map((id) => ({ id })) },
+          userId: session.user.id,
+        },
+        include: {
+          actresses: true,
+        },
+      });
     });
 
     return NextResponse.json(link, { status: 201 });
@@ -155,27 +157,30 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Link not found' }, { status: 404 });
     }
 
-    // Build update data object with only provided fields
-    const updateData: Prisma.LinkUpdateInput = {};
-    if (favorite !== undefined) updateData.favorite = favorite;
-    // Replace the whole tag set when actressIds and/or actressNames is provided.
-    if (Array.isArray(actressIds) || actressNames !== undefined) {
-      const ids = (Array.isArray(actressIds) ? actressIds : []).filter(
-        (aid: unknown): aid is string => typeof aid === 'string'
-      );
-      const resolved = await resolveActresses(parsedNames.names);
-      const tagIds = uniqueIds([...ids, ...resolved.map((a) => a.id)]);
-      updateData.actresses = { set: tagIds.map((aid) => ({ id: aid })) };
-    }
-    if (title !== undefined) updateData.title = title;
-    if (image !== undefined) updateData.image = image;
+    // One transaction: if the update fails, newly created tags roll back too.
+    const link = await prisma.$transaction(async (tx) => {
+      // Build update data object with only provided fields
+      const updateData: Prisma.LinkUpdateInput = {};
+      if (favorite !== undefined) updateData.favorite = favorite;
+      // Replace the whole tag set when actressIds and/or actressNames is provided.
+      if (Array.isArray(actressIds) || actressNames !== undefined) {
+        const ids = (Array.isArray(actressIds) ? actressIds : []).filter(
+          (aid: unknown): aid is string => typeof aid === 'string'
+        );
+        const resolved = await resolveActresses(parsedNames.names, tx);
+        const tagIds = uniqueIds([...ids, ...resolved.map((a) => a.id)]);
+        updateData.actresses = { set: tagIds.map((aid) => ({ id: aid })) };
+      }
+      if (title !== undefined) updateData.title = title;
+      if (image !== undefined) updateData.image = image;
 
-    const link = await prisma.link.update({
-      where: { id },
-      data: updateData,
-      include: {
-        actresses: true,
-      },
+      return tx.link.update({
+        where: { id },
+        data: updateData,
+        include: {
+          actresses: true,
+        },
+      });
     });
 
     return NextResponse.json(link);
