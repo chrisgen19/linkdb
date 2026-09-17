@@ -264,7 +264,7 @@ function LinkForm({
     );
 
   /** Find-or-create every pill (plus any trailing text) → actress ids. */
-  async function resolveActressIds(signal: AbortSignal): Promise<string[]> {
+  async function resolveActressIds(): Promise<string[]> {
     const names = pills.map((p) => p.name);
     const trailing = actressInput.trim();
     if (trailing) names.push(trailing);
@@ -273,11 +273,13 @@ function LinkForm({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ names }),
-      signal,
     });
     // Throw rather than returning [] — a silent empty set would make the
     // PATCH/POST below wipe every existing tag on a transient failure.
-    if (!res.ok) throw new Error("Couldn't save the actress tags");
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Couldn't save the actress tags");
+    }
     const resolved: Actress[] = await res.json();
     resolved.forEach(onActressCreated);
     return resolved.map((a) => a.id);
@@ -360,12 +362,15 @@ function LinkForm({
 
     let committed = false;
     try {
-      const actressIds = await resolveActressIds(signal);
+      // The lookup runs before any tags are created: it can be cancelled or
+      // reject the URL (duplicate, invalid), and neither should leave tags behind.
       const metadata = editingLink ? null : await fetchMetadata(href, signal);
       // Closed before saving: save nothing.
       if (signal.aborted) return;
-      // From here the save finishes, and reports errors, even if the sheet closes.
+      // From here the save (tags, then link) finishes and reports errors, even
+      // if the sheet closes.
       committed = true;
+      const actressIds = await resolveActressIds();
       if (editingLink) await updateLink(editingLink.id, actressIds);
       else if (metadata) await createLink(metadata, actressIds);
       // Don't close a sheet the user has since closed or reopened for another link.

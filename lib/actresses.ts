@@ -2,6 +2,21 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import type { Actress } from '@/lib/types';
 
+// Each name costs sequential queries in resolveActresses, so callers cap the input.
+export const MAX_ACTRESS_NAMES = 50;
+export const MAX_ACTRESS_NAME_LENGTH = 100;
+
+/** Returns a 400-style message when `names` exceeds the limits, otherwise null. */
+export function actressNamesError(names: string[]): string | null {
+  if (names.length > MAX_ACTRESS_NAMES) {
+    return `At most ${MAX_ACTRESS_NAMES} actress tags per request`;
+  }
+  if (names.some((name) => name.trim().length > MAX_ACTRESS_NAME_LENGTH)) {
+    return `Actress names must be ${MAX_ACTRESS_NAME_LENGTH} characters or fewer`;
+  }
+  return null;
+}
+
 /**
  * Find-or-create actresses by name. Trims each name, drops blanks, and dedupes
  * the input case-insensitively. Matching against existing rows is also

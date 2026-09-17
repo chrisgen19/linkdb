@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { resolveActresses } from '@/lib/actresses';
+import { actressNamesError, resolveActresses } from '@/lib/actresses';
 import { findDuplicateLink } from '@/lib/links';
 import { tokenFromRequest, userIdFromApiToken } from '@/lib/api-token';
 import { assertHttpUrl, extractMetadata, MetadataError } from '@/lib/metadata';
@@ -60,6 +60,12 @@ async function handleQuickAdd(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: message }, { status });
   }
 
+  const actressNames = actressParam ? actressParam.split(',') : [];
+  const invalidNames = actressNamesError(actressNames);
+  if (invalidNames) {
+    return NextResponse.json({ error: invalidNames }, { status: 400 });
+  }
+
   // Don't create duplicates for the same user (any equivalent spelling).
   const existing = await findDuplicateLink(userId, url, href);
   if (existing) {
@@ -67,7 +73,7 @@ async function handleQuickAdd(request: NextRequest): Promise<NextResponse> {
   }
 
   // Comma-separated actresses: find-or-create only once the link will be saved.
-  const actresses = actressParam ? await resolveActresses(actressParam.split(',')) : [];
+  const actresses = actressNames.length ? await resolveActresses(actressNames) : [];
 
   // Best-effort metadata; if scraping fails the link still saves URL-only.
   let title: string | null = null;

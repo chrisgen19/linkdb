@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { resolveActresses } from '@/lib/actresses';
+import { actressNamesError, resolveActresses } from '@/lib/actresses';
 
 // GET all actresses
 export async function GET() {
@@ -46,11 +46,19 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      const invalid = actressNamesError(names);
+      if (invalid) {
+        return NextResponse.json({ error: invalid }, { status: 400 });
+      }
       return NextResponse.json(await resolveActresses(names));
     }
 
     if (typeof name !== 'string' || !name.trim()) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    }
+    const invalid = actressNamesError([name]);
+    if (invalid) {
+      return NextResponse.json({ error: invalid }, { status: 400 });
     }
 
     // Route single-name through the same case-insensitive find-or-create as the
