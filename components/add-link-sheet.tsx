@@ -6,7 +6,12 @@ import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import type { Actress, Link } from "@/lib/types";
+import { parseUserUrl } from "@/lib/url";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import {
+  useKeepFocusedFieldInView,
+  useKeyboardInset,
+} from "@/hooks/use-keyboard-inset";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +29,9 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
+
+// Gap kept between the top of the visible area and the drawer while the keyboard is up.
+const KEYBOARD_TOP_GAP = 12;
 
 interface AddLinkSheetProps {
   open: boolean;
@@ -43,6 +51,9 @@ export function AddLinkSheet({
   onActressCreated,
 }: AddLinkSheetProps) {
   const isDesktop = useMediaQuery("(min-width: 768px)");
+  const keyboard = useKeyboardInset(open && !isDesktop);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  useKeepFocusedFieldInView(scrollRef, keyboard);
   const isEditing = !!editingLink;
   const title = isEditing ? "Edit link" : "Add a link";
   const description = isEditing
@@ -57,6 +68,7 @@ export function AddLinkSheet({
       onActressCreated={onActressCreated}
       onClose={() => onOpenChange(false)}
       autoFocusUrl={autoFocusUrl}
+      active={open}
     />
   );
 
@@ -77,15 +89,37 @@ export function AddLinkSheet({
   return (
     // shouldScaleBackground off: the background-scale animation is glitchy
     // without a vaul wrapper and can leave the content snapped off-screen.
-    <Drawer open={open} onOpenChange={onOpenChange} shouldScaleBackground={false}>
+    // repositionInputs off: vaul lifts the drawer by the keyboard height but
+    // ignores visualViewport.offsetTop, so when iOS Safari also pans to the
+    // focused input the shifts stack and the field lands above the screen
+    // (vaul #619, #521). useKeyboardInset places it on the visible area instead.
+    <Drawer
+      open={open}
+      onOpenChange={onOpenChange}
+      shouldScaleBackground={false}
+      repositionInputs={false}
+    >
       {/* flex column with a bounded height so the body scrolls and every
           field stays reachable even with the on-screen keyboard up. */}
-      <DrawerContent className="flex max-h-[90svh] flex-col">
+      <DrawerContent
+        className="flex max-h-[90svh] flex-col"
+        style={
+          keyboard
+            ? {
+                bottom: keyboard.bottom,
+                maxHeight: keyboard.height - KEYBOARD_TOP_GAP,
+              }
+            : undefined
+        }
+      >
         <DrawerHeader className="shrink-0 pb-1">
           <DrawerTitle>{title}</DrawerTitle>
           <DrawerDescription>{description}</DrawerDescription>
         </DrawerHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+        <div
+          ref={scrollRef}
+          className="min-h-0 flex-1 overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
+        >
           {/* Don't autofocus on mobile — popping the keyboard during the open
               animation can leave the drawer mis-positioned. */}
           {form(false)}
@@ -102,6 +136,30 @@ interface LinkFormProps {
   onActressCreated: (actress: Actress) => void;
   onClose: () => void;
   autoFocusUrl: boolean;
+  /** False once the sheet starts closing; cancels any in-flight save. */
+  active: boolean;
+}
+
+// The server may fall back to a headless browser, which can take about a minute.
+const METADATA_TIMEOUT_MS = 70_000;
+
+interface PageMeta {
+  url: string;
+  title: string | null;
+  image: string | null;
+}
+
+/** A signal that aborts when `signal` does or after `ms`, whichever comes first. */
+function withTimeout(signal: AbortSignal, ms: number): AbortSignal {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  const abort = () => {
+    clearTimeout(timer);
+    controller.abort();
+  };
+  if (signal.aborted) abort();
+  else signal.addEventListener("abort", abort, { once: true });
+  return controller.signal;
 }
 
 function LinkForm({
@@ -111,9 +169,12 @@ function LinkForm({
   onActressCreated,
   onClose,
   autoFocusUrl,
+  active,
 }: LinkFormProps) {
   const isEditing = !!editingLink;
   const [url, setUrl] = React.useState("");
+  const [urlError, setUrlError] = React.useState<string | null>(null);
+  const saveRef = React.useRef<AbortController | null>(null);
   const [favorite, setFavorite] = React.useState(false);
   const [actressInput, setActressInput] = React.useState("");
   // Committed actress pills. New (just-typed) names have id === null and are
@@ -124,8 +185,16 @@ function LinkForm({
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
 
+  // Closing the sheet (Cancel, swipe, Esc, backdrop) cancels an in-flight save
+  // instead of letting it finish in the background.
+  React.useEffect(() => {
+    if (!active) return;
+    return () => saveRef.current?.abort();
+  }, [active]);
+
   // Sync the form to the link being edited whenever it changes.
   React.useEffect(() => {
+    setUrlError(null);
     if (editingLink) {
       setUrl(editingLink.url);
       setFavorite(editingLink.favorite);
@@ -195,7 +264,7 @@ function LinkForm({
     );
 
   /** Find-or-create every pill (plus any trailing text) → actress ids. */
-  async function resolveActressIds(): Promise<string[]> {
+  async function resolveActressIds(signal: AbortSignal): Promise<string[]> {
     const names = pills.map((p) => p.name);
     const trailing = actressInput.trim();
     if (trailing) names.push(trailing);
@@ -204,6 +273,7 @@ function LinkForm({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ names }),
+      signal,
     });
     // Throw rather than returning [] — a silent empty set would make the
     // PATCH/POST below wipe every existing tag on a transient failure.
@@ -213,70 +283,95 @@ function LinkForm({
     return resolved.map((a) => a.id);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-
+  /**
+   * Best-effort title/cover lookup: falls back to URL-only on network errors,
+   * timeouts and 5xx, but throws on a 4xx (invalid or already-saved URL).
+   */
+  async function fetchMetadata(href: string, signal: AbortSignal): Promise<PageMeta> {
+    const fallback: PageMeta = { url: href, title: null, image: null };
+    let res: Response;
     try {
-      const actressIds = await resolveActressIds();
-
-      if (editingLink) {
-        const res = await fetch("/api/links", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: editingLink.id, favorite, actressIds }),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || "Failed to update link");
-        }
-        onSaved(await res.json(), "update");
-        toast.success("Link updated");
-        onClose();
-        return;
-      }
-
-      // Fetch metadata (best-effort), then save.
-      let metadata: { url: string; title: string | null; image: string | null } = {
-        url,
-        title: null,
-        image: null,
-      };
-      let metaRes: Response | null = null;
-      try {
-        metaRes = await fetch("/api/metadata", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url }),
-          signal: AbortSignal.timeout(70_000),
-        });
-      } catch (metaErr) {
-        console.error("Metadata fetch failed, saving URL only:", metaErr);
-      }
-      if (metaRes) {
-        if (metaRes.ok) {
-          metadata = await metaRes.json();
-        } else if (metaRes.status < 500) {
-          const data = await metaRes.json().catch(() => ({}));
-          throw new Error(data.error || "Invalid URL");
-        }
-      }
-
-      const saveRes = await fetch("/api/links", {
+      res = await fetch("/api/metadata", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...metadata, favorite, actressIds }),
+        body: JSON.stringify({ url: href }),
+        signal: withTimeout(signal, METADATA_TIMEOUT_MS),
       });
-      if (!saveRes.ok) {
-        const data = await saveRes.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to save link");
+    } catch (metaErr) {
+      if (!signal.aborted) {
+        console.error("Metadata fetch failed, saving URL only:", metaErr);
       }
-      onSaved(await saveRes.json(), "create");
-      toast.success(
-        metadata.title ? `Saved “${metadata.title}”` : "Link saved"
+      return fallback;
+    }
+    if (res.ok) return res.json();
+    if (res.status < 500) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Invalid URL");
+    }
+    return fallback;
+  }
+
+  async function createLink(metadata: PageMeta, actressIds: string[]) {
+    const res = await fetch("/api/links", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...metadata, favorite, actressIds }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Failed to save link");
+    }
+    onSaved(await res.json(), "create");
+    toast.success(metadata.title ? `Saved “${metadata.title}”` : "Link saved");
+  }
+
+  async function updateLink(id: string, actressIds: string[]) {
+    const res = await fetch("/api/links", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, favorite, actressIds }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Failed to update link");
+    }
+    onSaved(await res.json(), "update");
+    toast.success("Link updated");
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    // The form is noValidate so a bare "example.com" gets https:// added
+    // instead of being rejected by the browser.
+    const href = editingLink ? editingLink.url : parseUserUrl(url);
+    if (!href) {
+      setUrlError(
+        url.trim() ? "Enter a valid web address, like example.com/page" : "Enter a URL"
       );
-      onClose();
+      return;
+    }
+    setUrlError(null);
+    if (!editingLink) setUrl(href);
+
+    const controller = new AbortController();
+    saveRef.current = controller;
+    const { signal } = controller;
+    setLoading(true);
+
+    let committed = false;
+    try {
+      const actressIds = await resolveActressIds(signal);
+      const metadata = editingLink ? null : await fetchMetadata(href, signal);
+      // Closed before saving: save nothing.
+      if (signal.aborted) return;
+      // From here the save finishes, and reports errors, even if the sheet closes.
+      committed = true;
+      if (editingLink) await updateLink(editingLink.id, actressIds);
+      else if (metadata) await createLink(metadata, actressIds);
+      // Don't close a sheet the user has since closed or reopened for another link.
+      if (!signal.aborted) onClose();
     } catch (err) {
+      if (signal.aborted && !committed) return;
       toast.error(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
@@ -284,9 +379,9 @@ function LinkForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5 pt-2">
+    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5 pt-2">
       {/* URL */}
-      <div className="space-y-2">
+      <div data-field className="space-y-2">
         <Label htmlFor="url" className="flex items-center gap-1.5">
           <Link2 className="size-3.5 text-muted-foreground" /> URL
         </Label>
@@ -298,14 +393,24 @@ function LinkForm({
           autoCapitalize="none"
           enterKeyHint="go"
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={(e) => {
+            setUrl(e.target.value);
+            setUrlError(null);
+          }}
           placeholder="https://example.com/…"
           required
+          aria-invalid={!!urlError}
+          aria-describedby={urlError ? "url-error" : undefined}
           disabled={loading || isEditing}
           readOnly={isEditing}
-          className="h-12"
+          className={cn("h-12", urlError && "border-destructive")}
           autoFocus={autoFocusUrl}
         />
+        {urlError && (
+          <p id="url-error" role="alert" className="text-xs text-destructive">
+            {urlError}
+          </p>
+        )}
         {isEditing && (
           <p className="text-xs text-muted-foreground">
             The URL can&apos;t be changed when editing.
@@ -314,7 +419,7 @@ function LinkForm({
       </div>
 
       {/* Actress combobox */}
-      <div className="space-y-2">
+      <div data-field className="space-y-2">
         <Label htmlFor="actress" className="flex items-center gap-1.5">
           <Tag className="size-3.5 text-muted-foreground" /> Actress
           <span className="font-normal text-muted-foreground">(optional)</span>
@@ -433,8 +538,8 @@ function LinkForm({
           type="button"
           variant="ghost"
           size="lg"
+          // Stays enabled while saving: closing cancels the save.
           onClick={onClose}
-          disabled={loading}
           className="sm:w-auto"
         >
           Cancel
