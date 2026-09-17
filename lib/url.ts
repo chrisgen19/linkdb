@@ -33,6 +33,39 @@ export function parseUserUrl(raw: string): string | null {
   return href && new URL(href).hostname.includes('.') ? href : null;
 }
 
+const CLOSING_TO_OPENING: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+
+/**
+ * Drops sentence punctuation glued to the end of a link, including an unmatched
+ * closing bracket as in "(see https://x.com)", but keeps balanced ones like
+ * `wiki/Mercury_(planet)`.
+ */
+function trimTrailingPunctuation(url: string): string {
+  let end = url.length;
+  while (end > 0) {
+    const char = url[end - 1];
+    const opening = CLOSING_TO_OPENING[char];
+    if (opening) {
+      const head = url.slice(0, end);
+      if (head.split(char).length <= head.split(opening).length) break;
+    } else if (!'.,;:!?'.includes(char)) {
+      break;
+    }
+    end--;
+  }
+  return url.slice(0, end);
+}
+
+/**
+ * Finds a link in copied text: the whole text if it's an http(s) URL, else the
+ * first http(s) URL inside it (share sheets often copy "Title https://…").
+ * Requires an explicit scheme so plain text like "file.txt" isn't a match.
+ */
+export function findUrlInText(text: string): string | null {
+  const match = text.match(/https?:\/\/[^\s<>"']+/i);
+  return match ? normalizeHttpUrl(trimTrailingPunctuation(match[0])) : null;
+}
+
 /**
  * Spellings that count as the same saved link: the raw input (rows saved before
  * URLs were normalized), the normalized URL, and the same URL with the trailing
