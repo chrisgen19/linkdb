@@ -3,6 +3,23 @@ import { Prisma } from '@prisma/client';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import {
+  MAX_ACTRESS_NAMES,
+  parseActressNames,
+  resolveActresses,
+} from '@/lib/actresses';
+import { findDuplicateLink } from '@/lib/links';
+import { normalizeHttpUrl } from '@/lib/url';
+
+const TOO_MANY_TAGS = `At most ${MAX_ACTRESS_NAMES} actress tags per request`;
+
+const uniqueIds = (ids: string[]) => Array.from(new Set(ids));
+
+/** String entries of a request array field; anything else is ignored. */
+const stringIds = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? uniqueIds(value.filter((id): id is string => typeof id === 'string'))
+    : [];
 
 // GET all links for the authenticated user
 export async function GET() {
@@ -44,27 +61,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { url, title, image, favorite, actressIds, actressId } =
-      await request.json();
+    const {
+      url: rawUrl,
+      title,
+      image,
+      favorite,
+      actressIds,
+      actressId,
+      actressNames,
+    } = await request.json();
 
-    if (!url) {
+    if (!rawUrl) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    // Accept `actressIds: string[]`; tolerate a legacy single `actressId`.
-    const ids: string[] = Array.isArray(actressIds)
-      ? actressIds
-      : actressId
-        ? [actressId]
-        : [];
+    // Only store http(s) links, in normalized form.
+    const url = typeof rawUrl === 'string' ? normalizeHttpUrl(rawUrl) : null;
+    if (!url) {
+      return NextResponse.json(
+        { error: 'Only http(s) URLs are supported' },
+        { status: 400 }
+      );
+    }
 
-    // Check if link already exists for this user
-    const existingLink = await prisma.link.findFirst({
-      where: {
-        url,
-        userId: session.user.id,
-      },
-    });
+    // Accept `actressIds: string[]`; tolerate a legacy single `actressId`.
+    const ids = stringIds(Array.isArray(actressIds) ? actressIds : [actressId]);
+
+    const parsedNames = parseActressNames(actressNames);
+    if (parsedNames.error !== undefined) {
+      return NextResponse.json({ error: parsedNames.error }, { status: 400 });
+    }
+    if (ids.length + parsedNames.names.length > MAX_ACTRESS_NAMES) {
+      return NextResponse.json({ error: TOO_MANY_TAGS }, { status: 400 });
+    }
+
+    // Check if the link (or an equivalent spelling of it) already exists
+    const existingLink = await findDuplicateLink(session.user.id, rawUrl, url);
 
     if (existingLink) {
       return NextResponse.json(
@@ -73,19 +105,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create new link
-    const link = await prisma.link.create({
-      data: {
-        url,
-        title: title || null,
-        image: image || null,
-        favorite: favorite || false,
-        actresses: { connect: ids.map((id) => ({ id })) },
-        userId: session.user.id,
-      },
-      include: {
-        actresses: true,
-      },
+    // Tag names are resolved here, with the link write, so the client's single
+    // save request is the point after which nothing can be cancelled. One
+    // transaction: if the link write fails, newly created tags roll back too.
+    const link = await prisma.$transaction(async (tx) => {
+      const resolved = await resolveActresses(parsedNames.names, tx);
+      const tagIds = uniqueIds([...ids, ...resolved.map((a) => a.id)]);
+
+      return tx.link.create({
+        data: {
+          url,
+          title: title || null,
+          image: image || null,
+          favorite: favorite || false,
+          actresses: { connect: tagIds.map((id) => ({ id })) },
+          userId: session.user.id,
+        },
+        include: {
+          actresses: true,
+        },
+      });
     });
 
     return NextResponse.json(link, { status: 201 });
@@ -107,10 +146,20 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { id, favorite, actressIds, title, image } = await request.json();
+    const { id, favorite, actressIds, actressNames, title, image } =
+      await request.json();
 
     if (!id) {
       return NextResponse.json({ error: 'ID is required' }, { status: 400 });
+    }
+
+    const parsedNames = parseActressNames(actressNames);
+    if (parsedNames.error !== undefined) {
+      return NextResponse.json({ error: parsedNames.error }, { status: 400 });
+    }
+    const ids = stringIds(actressIds);
+    if (ids.length + parsedNames.names.length > MAX_ACTRESS_NAMES) {
+      return NextResponse.json({ error: TOO_MANY_TAGS }, { status: 400 });
     }
 
     // Verify the link belongs to the user
@@ -125,22 +174,27 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Link not found' }, { status: 404 });
     }
 
-    // Build update data object with only provided fields
-    const updateData: Prisma.LinkUpdateInput = {};
-    if (favorite !== undefined) updateData.favorite = favorite;
-    // Replace the whole tag set when actressIds is provided.
-    if (Array.isArray(actressIds)) {
-      updateData.actresses = { set: actressIds.map((aid: string) => ({ id: aid })) };
-    }
-    if (title !== undefined) updateData.title = title;
-    if (image !== undefined) updateData.image = image;
+    // One transaction: if the update fails, newly created tags roll back too.
+    const link = await prisma.$transaction(async (tx) => {
+      // Build update data object with only provided fields
+      const updateData: Prisma.LinkUpdateInput = {};
+      if (favorite !== undefined) updateData.favorite = favorite;
+      // Replace the whole tag set when actressIds and/or actressNames is provided.
+      if (Array.isArray(actressIds) || actressNames !== undefined) {
+        const resolved = await resolveActresses(parsedNames.names, tx);
+        const tagIds = uniqueIds([...ids, ...resolved.map((a) => a.id)]);
+        updateData.actresses = { set: tagIds.map((aid) => ({ id: aid })) };
+      }
+      if (title !== undefined) updateData.title = title;
+      if (image !== undefined) updateData.image = image;
 
-    const link = await prisma.link.update({
-      where: { id },
-      data: updateData,
-      include: {
-        actresses: true,
-      },
+      return tx.link.update({
+        where: { id },
+        data: updateData,
+        include: {
+          actresses: true,
+        },
+      });
     });
 
     return NextResponse.json(link);

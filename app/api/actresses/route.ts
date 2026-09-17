@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { resolveActresses } from '@/lib/actresses';
+import { actressNamesError, resolveActresses } from '@/lib/actresses';
 
 // GET all actresses
 export async function GET() {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const actresses = await prisma.actress.findMany({
       orderBy: {
         name: 'asc',
@@ -24,15 +31,34 @@ export async function GET() {
 // POST a new actress
 export async function POST(request: NextRequest) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { name, names } = await request.json();
 
     // Bulk find-or-create: returns the resolved actresses as an array.
     if (Array.isArray(names)) {
+      if (!names.every((n) => typeof n === 'string')) {
+        return NextResponse.json(
+          { error: 'Names must be strings' },
+          { status: 400 }
+        );
+      }
+      const invalid = actressNamesError(names);
+      if (invalid) {
+        return NextResponse.json({ error: invalid }, { status: 400 });
+      }
       return NextResponse.json(await resolveActresses(names));
     }
 
-    if (!name || !name.trim()) {
+    if (typeof name !== 'string' || !name.trim()) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    }
+    const invalid = actressNamesError([name]);
+    if (invalid) {
+      return NextResponse.json({ error: invalid }, { status: 400 });
     }
 
     // Route single-name through the same case-insensitive find-or-create as the

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { resolveActresses } from '@/lib/actresses';
+import { actressNamesError, resolveActresses } from '@/lib/actresses';
+import { findDuplicateLink } from '@/lib/links';
 import { tokenFromRequest, userIdFromApiToken } from '@/lib/api-token';
 import { assertHttpUrl, extractMetadata, MetadataError } from '@/lib/metadata';
 
@@ -33,8 +34,9 @@ async function handleQuickAdd(request: NextRequest): Promise<NextResponse> {
     try {
       if (contentType.includes('application/json')) {
         const body = await request.json();
-        url = url || body?.url || '';
-        actressParam = actressParam || body?.actress || '';
+        url = url || (typeof body?.url === 'string' ? body.url : '');
+        actressParam =
+          actressParam || (typeof body?.actress === 'string' ? body.actress : '');
       } else {
         const form = await request.formData();
         url = url || String(form.get('url') || '');
@@ -49,22 +51,23 @@ async function handleQuickAdd(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'URL is required' }, { status: 400 });
   }
 
-  // Comma-separated actresses → find-or-create, then connect on save.
-  const actresses = actressParam ? await resolveActresses(actressParam.split(',')) : [];
-
+  let href: string;
   try {
-    assertHttpUrl(url);
+    href = assertHttpUrl(url).href;
   } catch (error) {
     const status = error instanceof MetadataError ? error.status : 400;
     const message = error instanceof Error ? error.message : 'Invalid URL';
     return NextResponse.json({ error: message }, { status });
   }
 
-  // Don't create duplicates for the same user.
-  const existing = await prisma.link.findFirst({
-    where: { url, userId },
-    include: { actresses: true },
-  });
+  const actressNames = actressParam ? actressParam.split(',') : [];
+  const invalidNames = actressNamesError(actressNames);
+  if (invalidNames) {
+    return NextResponse.json({ error: invalidNames }, { status: 400 });
+  }
+
+  // Don't create duplicates for the same user (any equivalent spelling).
+  const existing = await findDuplicateLink(userId, url, href);
   if (existing) {
     return NextResponse.json({ ok: true, duplicate: true, link: existing });
   }
@@ -73,7 +76,7 @@ async function handleQuickAdd(request: NextRequest): Promise<NextResponse> {
   let title: string | null = null;
   let image: string | null = null;
   try {
-    const meta = await extractMetadata(url);
+    const meta = await extractMetadata(href);
     title = meta.title || null;
     image = meta.image;
   } catch (error) {
@@ -83,15 +86,20 @@ async function handleQuickAdd(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const link = await prisma.link.create({
-    data: {
-      url,
-      title,
-      image,
-      userId,
-      actresses: { connect: actresses.map((a) => ({ id: a.id })) },
-    },
-    include: { actresses: true },
+  // Comma-separated actresses are created in the same transaction as the link
+  // (after the slow scrape), so a failed save leaves no new tags behind.
+  const link = await prisma.$transaction(async (tx) => {
+    const actresses = await resolveActresses(actressNames, tx);
+    return tx.link.create({
+      data: {
+        url: href,
+        title,
+        image,
+        userId,
+        actresses: { connect: actresses.map((a) => ({ id: a.id })) },
+      },
+      include: { actresses: true },
+    });
   });
 
   return NextResponse.json({ ok: true, link }, { status: 201 });
