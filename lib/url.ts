@@ -33,6 +33,29 @@ export function parseUserUrl(raw: string): string | null {
   return href && new URL(href).hostname.includes('.') ? href : null;
 }
 
+const CLOSING_TO_OPENING: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+
+/**
+ * Drops sentence punctuation glued to the end of a link, including an unmatched
+ * closing bracket as in "(see https://x.com)", but keeps balanced ones like
+ * `wiki/Mercury_(planet)`.
+ */
+function trimTrailingPunctuation(url: string): string {
+  let end = url.length;
+  while (end > 0) {
+    const char = url[end - 1];
+    const opening = CLOSING_TO_OPENING[char];
+    if (opening) {
+      const head = url.slice(0, end);
+      if (head.split(char).length <= head.split(opening).length) break;
+    } else if (!'.,;:!?'.includes(char)) {
+      break;
+    }
+    end--;
+  }
+  return url.slice(0, end);
+}
+
 /**
  * Finds a link in copied text: the whole text if it's an http(s) URL, else the
  * first http(s) URL inside it (share sheets often copy "Title https://…").
@@ -40,9 +63,7 @@ export function parseUserUrl(raw: string): string | null {
  */
 export function findUrlInText(text: string): string | null {
   const match = text.match(/https?:\/\/[^\s<>"']+/i);
-  if (!match) return null;
-  // Drop sentence punctuation glued to the end of the link.
-  return normalizeHttpUrl(match[0].replace(/[.,;:!?)\]}]+$/, ''));
+  return match ? normalizeHttpUrl(trimTrailingPunctuation(match[0])) : null;
 }
 
 /**
